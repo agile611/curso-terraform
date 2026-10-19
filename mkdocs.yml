@@ -1,5 +1,5 @@
 site_name: Curso de Terraform
-site_description: Documentación y prácticas del curso de Terraform
+site_description: Documentación y prácticas de Terraform para Azure y AWS con entornos locales
 site_author: Guillem Hernandez Sola
 site_url: https://agile611.github.io/startusingterraform/
 
@@ -14,6 +14,7 @@ theme:
   language: es
   logo: https://www.agile611.com/wp-content/uploads/2020/09/Negativo.png
   favicon: https://www.agile611.com/wp-content/uploads/2019/07/cropped-agile611-1-e1563910774746-1-32x32.png
+
   font:
     text: Nunito
     code: Nunito
@@ -53,64 +54,170 @@ theme:
 
 nav:
   - Inicio: index.md
+
   - Azure:
       - "Introducción a Terraform con Azure": azure/index.md
+
       - "01. Fundamentos y primer entorno":
           - "1.1 Infraestructura como código": azure/01-01-introduccion-iac.md
           - "1.2 Terraform frente a otras herramientas": azure/01-02-comparativa-herramientas.md
           - "1.3 Declarativo frente a imperativo": azure/01-03-declarativo-imperativo.md
           - "1.4 Instalación de herramientas y arranque de Topaz": azure/01-04-Instalacion-de-herramientas-y-arranque-de-Topaz.md
-          - "1.5 Entorno práctico: Terraform, Azure Emulator Topaz y Docker": azure/01-05-Entorno-Practico-Terraform-Azure-Emulator-Topaz-en-Docker.md
+          - "1.5 Entorno práctico: Terraform, Topaz y Docker": azure/01-05-Entorno-Practico-Terraform-Azure-Emulator-Topaz-en-Docker.md
           - "1.6 Introducción a Azure y Terraform": azure/01-06-Introduccion-a-Azure-y-Terraform.md
           - "1.7 Configuración de Azure CLI": azure/01-07-configuracion-azure-cli.md
           - "1.8 Desplegar una máquina virtual con Terraform": azure/01-08-Desplegar-una-VM-en-el-Azure-Emulator-con-Terraform.md
+
       - "02. Recursos y verificación":
           - "2.1 Creación de grupos de recursos y recursos con Terraform": azure/02-01-Creacion-de-grupos-de-recursos-y-recursos-con-Terraform.md
           - "2.2 Verificación y validación de recursos en Azure": azure/02-02-Verificacion-y-validacion-de-recursos-en-Azure.md
+
       - "03. HCL y configuración del proveedor":
-          - "3.1 Sintaxis del lenguaje HCL en Terraform": azure/03-01-Sintaxis-del-lenguaje-HCL-en-Terraform.md
+          - "3.1 Sintaxis del lenguaje HCL": azure/03-01-Sintaxis-del-lenguaje-HCL-en-Terraform.md
           - "3.2 Bloques principales de Terraform": azure/03-02-Bloques-principales-de-Terraform.md
           - "3.3 Configuración del proveedor azurerm": azure/03-03-Configuracion-del-provider-azurerm.md
-          - "3.4 Crear tu primer grupo de recursos con Terraform": azure/03-04-Crear-tu-primer-Resource-Group-con-Terraform.md
+          - "3.4 Crear tu primer grupo de recursos": azure/03-04-Crear-tu-primer-Resource-Group-con-Terraform.md
+
       - "04. Ciclo de vida y estado":
           - "4.1 Comandos clave de Terraform": azure/04-01-Comandos-clave-de-Terraform.md
           - "4.2 Almacenamiento y bloqueo del estado": azure/04-02-Almacenamiento-y-bloqueo-del-state.md
+
       - "05. Variables, salidas y buenas prácticas":
           - "5.1 Variables en Terraform": azure/05-01-variables-en-terraform.md
-          - "5.2 Variables básicas en Terraform": azure/05-02-variables-basicas-en-terraform.md
-          - "5.3 Variables avanzadas en Terraform": azure/05-03-variables-avanzadas-en-terraform.md
-          - "5.4 Salidas (outputs) en Terraform": azure/05-04-Salidas-outputs-en-Terraform.md
+          - "5.2 Variables básicas": azure/05-02-variables-basicas-en-terraform.md
+          - "5.3 Variables avanzadas": azure/05-03-variables-avanzadas-en-terraform.md
+          - "5.4 Salidas (outputs)": azure/05-04-Salidas-outputs-en-Terraform.md
           - "5.5 Buenas prácticas en Terraform y Azure": azure/05-05-Buenas-practicas-en-Terraform-y-Azure.md
+
       - "06. Servicios de Azure":
           - "6.1 Despliegue de máquinas virtuales": azure/06-01-despliegue-de-maquinas-virtuales.md
           - "6.2 Redes virtuales": azure/06-02-redes-virtuales.md
           - "6.3 Bases de datos": azure/06-03-bases-de-datos.md
           - "6.4 Almacenamiento": azure/06-04-almacenamiento.md
           - "6.5 Buenas prácticas": azure/06-05-buenas-practicas.md
+
       - "07. Estado remoto y operaciones sobre el estado":
           - "7.1 Estado remoto en Azure Storage": azure/07-01-estado-remoto-en-azure-storage.md
           - "7.2 Bloqueo del estado": azure/07-02-bloqueo-de-estado.md
           - "7.3 Comandos de estado": azure/07-03-comandos-de-estado.md
           - "7.4 Workspaces": azure/07-04-workspaces.md
+
       - "08. Módulos, automatización y operación":
           - "8.1 Módulos personalizados": azure/08-01-modulos-personalizados.md
           - "8.2 CI/CD": azure/08-02-ci-cd.md
           - "8.3 Seguridad avanzada": azure/08-03-seguridad-avanzada.md
           - "8.4 Optimización": azure/08-04-optimizacion.md
           - "8.5 Monitorización y logging": azure/08-05-monitorizacion-y-logging.md
+
       - "09. Dependencias, metaargumentos y validación":
           - "9.1 Dependencias de recursos": azure/09-01-dependencias-de-recursos.md
           - "9.2 Metaargumentos": azure/09-02-metaargumentos.md
           - "9.3 Provisioners": azure/09-03-provisioners.md
           - "9.4 Validación": azure/09-04-validacion.md
+
       - "10. Secretos e identidad":
           - "10.1 Azure Key Vault": azure/10-01-key-vault.md
           - "10.2 Valores sensibles": azure/10-02-valores-sensibles.md
           - "10.3 Identidades gestionadas": azure/10-03-managed-identities.md
+
       - "11. CI/CD con controles":
           - "11.1 Automatización y CI/CD con Terraform": azure/11-01-automatizacion-y-ci-cd-terraform.md
           - "11.2 Pipeline y apply": azure/11-02-pipeline-y-apply.md
-          - "11.3 Aprobaciones y puertas": azure/11-03-aprobaciones-y-puertas.md
+          - "11.3 Aprobaciones y puertas de calidad": azure/11-03-aprobaciones-y-puertas.md
+
+  - AWS:
+      - "Introducción a Terraform con AWS": aws/index.md
+
+      - "01. Fundamentos y entorno local":
+          - "1.1 Infraestructura como código": aws/01-01-introduccion-a-infraestructura-como-codigo.md
+          - "1.2 Terraform, AWS y LocalStack": aws/01-02-terraform-aws-y-localstack.md
+          - "1.3 Declarativo frente a imperativo": aws/01-03-declarativo-frente-a-imperativo.md
+          - "1.4 Instalación de Terraform, Docker y AWS CLI": aws/01-04-instalacion-de-terraform-docker-y-aws-cli.md
+          - "1.5 Arranque de LocalStack con Docker Compose": aws/01-05-arranque-de-localstack-con-docker-compose.md
+          - "1.6 Configuración de AWS CLI y awslocal": aws/01-06-configuracion-de-aws-cli-y-awslocal.md
+          - "1.7 Servicios disponibles, limitaciones y ediciones": aws/01-07-servicios-disponibles-limitaciones-y-ediciones.md
+
+      - "02. Primeros despliegues con Terraform":
+          - "2.1 Estructura de un proyecto Terraform": aws/02-01-estructura-de-un-proyecto-terraform.md
+          - "2.2 Configuración del proveedor AWS para LocalStack": aws/02-02-configuracion-del-provider-aws-para-localstack.md
+          - "2.3 Endpoints, regiones y credenciales de prueba": aws/02-03-endpoints-regiones-y-credenciales-de-prueba.md
+          - "2.4 Primer despliegue: bucket S3": aws/02-04-primer-despliegue-bucket-s3.md
+          - "2.5 Verificación de recursos con AWS CLI": aws/02-05-verificacion-de-recursos-con-aws-cli.md
+          - "2.6 Limpieza de recursos y reinicio del laboratorio": aws/02-06-limpieza-de-recursos-y-reinicio-del-laboratorio.md
+
+      - "03. HCL, variables y expresiones":
+          - "3.1 Sintaxis del lenguaje HCL": aws/03-01-sintaxis-del-lenguaje-hcl.md
+          - "3.2 Bloques principales de Terraform": aws/03-02-bloques-principales-de-terraform.md
+          - "3.3 Tipos de datos y expresiones": aws/03-03-tipos-de-datos-y-expresiones.md
+          - "3.4 Variables y archivos tfvars": aws/03-04-variables-y-archivos-tfvars.md
+          - "3.5 Valores locales y funciones": aws/03-05-valores-locales-y-funciones.md
+          - "3.6 Salidas (outputs)": aws/03-06-salidas-outputs.md
+
+      - "04. Flujo de trabajo y dependencias":
+          - "4.1 init, fmt, validate, plan, apply y destroy": aws/04-01-init-fmt-validate-plan-apply-y-destroy.md
+          - "4.2 Planes guardados y revisión de cambios": aws/04-02-planes-guardados-y-revision-de-cambios.md
+          - "4.3 Dependencias implícitas y explícitas": aws/04-03-dependencias-implicitas-y-explicitas.md
+          - "4.4 count, for_each y condicionales": aws/04-04-count-for-each-y-condicionales.md
+          - "4.5 Bloques dynamic y lifecycle": aws/04-05-bloques-dynamic-y-lifecycle.md
+          - "4.6 Data sources y referencias a recursos": aws/04-06-data-sources-y-referencias-a-recursos.md
+
+      - "05. Almacenamiento y mensajería":
+          - "5.1 S3: buckets, objetos y versionado": aws/05-01-s3-buckets-objetos-y-versionado.md
+          - "5.2 SQS: colas y dead-letter queues": aws/05-02-sqs-colas-y-dead-letter-queues.md
+          - "5.3 SNS: topics y suscripciones": aws/05-03-sns-topics-y-suscripciones.md
+          - "5.4 DynamoDB: tablas y claves": aws/05-04-dynamodb-tablas-y-claves.md
+          - "5.5 Integración de SNS y SQS": aws/05-05-integracion-sns-y-sqs.md
+          - "5.6 Práctica de almacenamiento y mensajería": aws/05-06-practica-almacenamiento-y-mensajeria.md
+
+      - "06. Aplicaciones serverless":
+          - "6.1 Lambda: funciones y empaquetado": aws/06-01-lambda-funciones-y-empaquetado.md
+          - "6.2 IAM: roles y políticas para Lambda": aws/06-02-iam-roles-y-politicas-para-lambda.md
+          - "6.3 API Gateway y endpoints HTTP": aws/06-03-api-gateway-y-endpoints-http.md
+          - "6.4 Integración de Lambda y DynamoDB": aws/06-04-integracion-lambda-y-dynamodb.md
+          - "6.5 Integración de SQS y Lambda": aws/06-05-integracion-sqs-y-lambda.md
+          - "6.6 Logs y diagnóstico de funciones": aws/06-06-logs-y-diagnostico-de-funciones.md
+          - "6.7 Práctica: API serverless local": aws/06-07-practica-api-serverless-local.md
+
+      - "07. Estado y backends":
+          - "7.1 Fundamentos del estado de Terraform": aws/07-01-fundamentos-del-estado-de-terraform.md
+          - "7.2 Inspección del estado y comandos state": aws/07-02-inspeccion-del-estado-y-comandos-state.md
+          - "7.3 Importación de recursos existentes": aws/07-03-importacion-de-recursos-existentes.md
+          - "7.4 Refactorización con bloques moved": aws/07-04-refactorizacion-con-bloques-moved.md
+          - "7.5 Backend S3 en LocalStack": aws/07-05-backend-s3-en-localstack.md
+          - "7.6 Bloqueo del estado y limitaciones del emulador": aws/07-06-bloqueo-del-estado-y-limitaciones-del-emulador.md
+          - "7.7 Workspaces y separación de entornos": aws/07-07-workspaces-y-separacion-de-entornos.md
+
+      - "08. Módulos y reutilización":
+          - "8.1 Creación de módulos personalizados": aws/08-01-creacion-de-modulos-personalizados.md
+          - "8.2 Variables, outputs y contratos de módulos": aws/08-02-variables-outputs-y-contratos-de-modulos.md
+          - "8.3 Módulo de almacenamiento S3": aws/08-03-modulo-de-almacenamiento-s3.md
+          - "8.4 Módulo de mensajería SNS y SQS": aws/08-04-modulo-de-mensajeria-sns-sqs.md
+          - "8.5 Módulo de API serverless": aws/08-05-modulo-de-api-serverless.md
+          - "8.6 Versionado y reutilización de módulos": aws/08-06-versionado-y-reutilizacion-de-modulos.md
+
+      - "09. Seguridad y validación":
+          - "9.1 Credenciales locales y prevención de despliegues en AWS": aws/09-01-credenciales-locales-y-prevencion-de-despliegues-en-aws.md
+          - "9.2 IAM y principio de mínimo privilegio": aws/09-02-iam-y-principio-de-minimo-privilegio.md
+          - "9.3 Secretos y parámetros según servicios disponibles": aws/09-03-secretos-y-parametros-segun-servicios-disponibles.md
+          - "9.4 Valores sensibles y secretos en el estado": aws/09-04-valores-sensibles-y-secretos-en-el-state.md
+          - "9.5 Validaciones, precondiciones y postcondiciones": aws/09-05-validaciones-precondiciones-y-postcondiciones.md
+          - "9.6 Análisis estático y buenas prácticas": aws/09-06-analisis-estatico-y-buenas-practicas.md
+
+      - "10. Pruebas y CI/CD":
+          - "10.1 Estrategia de pruebas de infraestructura": aws/10-01-estrategia-de-pruebas-de-infraestructura.md
+          - "10.2 Pruebas con terraform test": aws/10-02-pruebas-con-terraform-test.md
+          - "10.3 Pruebas de integración con LocalStack": aws/10-03-pruebas-de-integracion-con-localstack.md
+          - "10.4 LocalStack en pipelines CI/CD": aws/10-04-localstack-en-pipelines-ci-cd.md
+          - "10.5 Pipeline de validación, plan y pruebas": aws/10-05-pipeline-de-validacion-plan-y-pruebas.md
+          - "10.6 Aislamiento y limpieza de entornos CI": aws/10-06-aislamiento-y-limpieza-de-entornos-ci.md
+
+      - "11. Proyecto final y transición a AWS":
+          - "11.1 Arquitectura y requisitos": aws/11-01-proyecto-final-arquitectura-y-requisitos.md
+          - "11.2 Módulos e infraestructura": aws/11-02-proyecto-final-modulos-e-infraestructura.md
+          - "11.3 API y procesamiento asíncrono": aws/11-03-proyecto-final-api-y-procesamiento-asincrono.md
+          - "11.4 Pruebas y observabilidad": aws/11-04-proyecto-final-pruebas-y-observabilidad.md
+          - "11.5 Automatización CI/CD": aws/11-05-proyecto-final-automatizacion-ci-cd.md
+          - "11.6 Del emulador a AWS real: diferencias y checklist": aws/11-06-del-emulador-a-aws-real-diferencias-y-checklist.md
 
 markdown_extensions:
   - admonition
