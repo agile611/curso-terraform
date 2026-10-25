@@ -129,7 +129,84 @@ Las rutas y las reglas de permisos pueden variar entre sistemas.
 El docente debe probar la combinación de herramientas antes de la sesión.
 El alumnado debe registrar la combinación que realmente utiliza.
 
-### 3.5. Instalación de Terraform en Ubuntu 24.04
+### 3.5. Instalación de Docker Engine en Ubuntu 24.04
+
+El método recomendado es el script oficial de Docker, que configura el repositorio e instala la versión más reciente estable.
+
+```bash
+# 1. Actualizar el índice de paquetes e instalar dependencias
+sudo apt-get update && sudo apt-get install -y ca-certificates curl gnupg
+
+# 2. Añadir la clave GPG oficial de Docker
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+
+# 3. Añadir el repositorio oficial de Docker
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+  https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+# 4. Actualizar e instalar Docker Engine, CLI, Compose plugin y containerd
+sudo apt-get update && sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+```
+
+#### Verificación de la instalación
+
+```bash
+docker version
+docker compose version
+```
+
+Debería mostrar algo similar a:
+
+```text
+Client: Docker Engine - Community
+ Version:           27.x.x
+...
+```
+
+#### Solución al error "permission denied" al usar docker sin sudo
+
+Por defecto, el socket de Docker (`/var/run/docker.sock`) solo es accesible por root y el grupo `docker`. Para evitar tener que usar `sudo` en cada comando:
+
+```bash
+# 1. Añadir tu usuario al grupo docker
+sudo usermod -aG docker $USER
+
+# 2. Aplicar el cambio de grupo en la sesión actual (sin cerrar sesión)
+newgrp docker
+
+# 3. Verificar que funciona sin sudo
+docker compose ps
+```
+
+> **Nota:** `newgrp docker` crea una subshell con el nuevo grupo. En una terminal nueva (o tras cerrar y volver a abrir), el cambio ya estará activo sin necesidad de `newgrp`.
+
+#### Alternativa: script de instalación automática (get.docker.com)
+
+Para una instalación más rápida y no interactiva:
+
+```bash
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+newgrp docker
+```
+
+Este script detecta la distribución, añade el repositorio e instala Docker automáticamente.
+
+#### Desinstalación
+
+```bash
+sudo apt-get purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo rm -rf /var/lib/docker /etc/apt/keyrings/docker.gpg /etc/apt/sources.list.d/docker.list
+sudo apt-get update
+```
+
+---
+
+### 3.6. Instalación de Terraform en Ubuntu 24.04
 
 Terraform no está en los repositorios oficiales de Ubuntu. El método recomendado es utilizar el repositorio oficial de HashiCorp.
 
@@ -191,7 +268,7 @@ sudo apt-get update
 
 > **Nota:** El repositorio de HashiCorp usa el nombre en clave de Ubuntu (`noble` para 24.04). El comando `$(lsb_release -cs)` lo detecta automáticamente.
 
-### 3.6. Instalación de AWS CLI v2 en Ubuntu 24.04
+### 3.7. Instalación de AWS CLI v2 en Ubuntu 24.04
 
 AWS CLI v2 no está en los repositorios oficiales de Ubuntu. El método recomendado es el instalador oficial de AWS.
 
