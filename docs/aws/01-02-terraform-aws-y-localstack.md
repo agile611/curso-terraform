@@ -258,94 +258,13 @@ aws configure set cli_pager ""
 aws configure set region us-east-1
 ```
 
-> **Nota:** Para el laboratorio local con LocalStack, las credenciales reales **no** se configuran aquí. Se pasan mediante la función `aws_local` definida en la sección 3.7, que anula cualquier configuración guardada.
+> **Nota:** Para el laboratorio local con LocalStack, las credenciales reales **no** se configuran aquí. Se pasan mediante la función `aws_local` definida en la sección 3.8, que anula cualquier configuración guardada.
 
-### 3.7. Definición y uso de la función `aws_local`
-
-La función `aws_local` permite invocar AWS CLI dirigiendo las peticiones a LocalStack sin modificar la configuración global. Defínela al inicio de cada sesión de terminal:
-
-```bash
-aws_local() {
-  AWS_ACCESS_KEY_ID=test \
-  AWS_SECRET_ACCESS_KEY=test \
-  AWS_SESSION_TOKEN= \
-  AWS_PROFILE= \
-  AWS_CONFIG_FILE=/dev/null \
-  AWS_SHARED_CREDENTIALS_FILE=/dev/null \
-  AWS_EC2_METADATA_DISABLED=true \
-  aws \
-    --endpoint-url http://localhost:4566 \
-    --region us-east-1 \
-    --no-cli-pager \
-    "$@"
-}
-```
-
-#### Qué hace cada opción
-
-| Opción | Propósito |
-|--------|-----------|
-| `AWS_ACCESS_KEY_ID=test` / `AWS_SECRET_ACCESS_KEY=test` | Credenciales ficticias requeridas por el CLI |
-| `AWS_SESSION_TOKEN=` / `AWS_PROFILE=` | Anula tokens y perfiles heredados |
-| `AWS_CONFIG_FILE=/dev/null` / `AWS_SHARED_CREDENTIALS_FILE=/dev/null` | Ignora archivos de configuración locales |
-| `AWS_EC2_METADATA_DISABLED=true` | Evita consultas al metadata service de EC2 |
-| `--endpoint-url http://localhost:4566` | Redirige la API a LocalStack |
-| `--region us-east-1` | Región de referencia (coincide con `compose.yaml`) |
-| `--no-cli-pager` | Salida directa sin paginador interactivo |
-
-#### Uso básico
-
-```bash
-# Listar buckets (debe estar vacío al inicio)
-aws_local s3api list-buckets
-
-# Crear un bucket de prueba
-aws_local s3api create-bucket --bucket mi-bucket-prueba
-
-# Ver objetos
-aws_local s3api list-objects-v2 --bucket mi-bucket-prueba
-
-# Eliminar bucket de prueba
-aws_local s3api delete-bucket --bucket mi-bucket-prueba
-```
-
-#### Persistencia de la función
-
-- La función existe solo en la sesión de Bash actual.
-- Al cerrar la terminal, se pierde y debe redefinirse.
-- Para evitar redefinirla, añádela a `~/.bashrc` o a un script de arranque del proyecto:
-
-```bash
-# En el directorio del proyecto, crea un archivo sourceable
-cat > .env.localstack <<'EOF'
-aws_local() {
-  AWS_ACCESS_KEY_ID=test \
-  AWS_SECRET_ACCESS_KEY=test \
-  AWS_SESSION_TOKEN= \
-  AWS_PROFILE= \
-  AWS_CONFIG_FILE=/dev/null \
-  AWS_SHARED_CREDENTIALS_FILE=/dev/null \
-  AWS_EC2_METADATA_DISABLED=true \
-  aws \
-    --endpoint-url http://localhost:4566 \
-    --region us-east-1 \
-    --no-cli-pager \
-    "$@"
-}
-export -f aws_local
-EOF
-
-# Cárgalo en cada terminal nueva
-source .env.localstack
-```
-
-> **Importante:** No guardes credenciales reales en `.env.localstack`. Este archivo es solo para el laboratorio local.
-
-### 3.8. Arranque y verificación de LocalStack
+### 3.7. Arranque y verificación de LocalStack
 
 LocalStack se ejecuta en Docker mediante Docker Compose. El archivo `compose.yaml` se crea en la sección 9, pero el arranque pertenece a la preparación del entorno.
 
-#### 3.8.1. Archivo `compose.yaml` (resumen)
+#### 3.7.1. Archivo `compose.yaml` (resumen)
 
 ```yaml
 services:
@@ -360,7 +279,7 @@ services:
 
 > **Nota:** La etiqueta `4.0.0` es una referencia didáctica. Sustitúyela por la versión probada por el curso.
 
-#### 3.8.2. Comandos de arranque
+#### 3.7.2. Comandos de arranque
 
 ```bash
 # 1. Validar sintaxis del compose
@@ -380,7 +299,7 @@ NAME                IMAGE                         STATUS          PORTS
 localstack          localstack/localstack:4.0.0   Up X seconds    127.0.0.1:4566->4566/tcp
 ```
 
-#### 3.8.3. Verificar disponibilidad de la API
+#### 3.7.3. Verificar disponibilidad de la API
 
 El contenedor "Up" no garantiza que la API S3 esté lista. Comprueba el endpoint de salud:
 
@@ -401,7 +320,79 @@ Respuesta típica (JSON):
 }
 ```
 
-#### 3.8.4. Comprobación funcional de S3
+#### 3.7.4. Consultar registros si hay problemas
+
+```bash
+# Últimas 100 líneas
+docker compose logs --tail=100 localstack
+
+# Seguir logs en tiempo real
+docker compose logs -f localstack
+```
+
+#### 3.7.5. Detener LocalStack
+
+Al finalizar la práctica (después de limpiar recursos con Terraform):
+
+```bash
+docker compose down
+```
+
+> **Regla:** Destruye y verifica los recursos Terraform **antes** de detener LocalStack. Detener el contenedor no elimina el estado de Terraform.
+
+### 3.8. Definición y uso de la función `aws_local`
+
+Una vez que LocalStack está en marcha, define la función `aws_local` para dirigir las peticiones de AWS CLI al endpoint local.
+
+La función `aws_local` permite invocar AWS CLI dirigiendo las peticiones a LocalStack sin modificar la configuración global. Defínela al inicio de cada sesión de terminal:
+
+```bash
+aws_local() {
+  AWS_ACCESS_KEY_ID=test \
+  AWS_SECRET_ACCESS_KEY=test \
+  AWS_SESSION_TOKEN= \
+  AWS_CONFIG_FILE=/dev/null \
+  AWS_SHARED_CREDENTIALS_FILE=/dev/null \
+  AWS_EC2_METADATA_DISABLED=true \
+  aws \
+    --endpoint-url http://localhost:4566 \
+    --region us-east-1 \
+    --no-cli-pager \
+    "$@"
+}
+```
+
+#### Qué hace cada opción
+
+| Opción | Propósito |
+|--------|-----------|
+| `AWS_ACCESS_KEY_ID=test` / `AWS_SECRET_ACCESS_KEY=test` | Credenciales ficticias requeridas por el CLI |
+| `AWS_SESSION_TOKEN=` | Anula tokens de sesión heredados |
+| `AWS_CONFIG_FILE=/dev/null` / `AWS_SHARED_CREDENTIALS_FILE=/dev/null` | Ignora archivos de configuración y credenciales locales (incluye perfiles) |
+| `AWS_EC2_METADATA_DISABLED=true` | Evita consultas al metadata service de EC2 |
+| `--endpoint-url http://localhost:4566` | Redirige la API a LocalStack |
+| `--region us-east-1` | Región de referencia (coincide con `compose.yaml`) |
+| `--no-cli-pager` | Salida directa sin paginador interactivo |
+
+> **Nota:** No se establece `AWS_PROFILE` porque `AWS_CONFIG_FILE=/dev/null` ya ignora cualquier perfil configurado. Establecer `AWS_PROFILE=` (vacío) causa error en AWS CLI v2: "The config profile () could not be found".
+
+#### Uso básico
+
+```bash
+# Listar buckets (debe estar vacío al inicio)
+aws_local s3api list-buckets
+
+# Crear un bucket de prueba
+aws_local s3api create-bucket --bucket mi-bucket-prueba
+
+# Ver objetos
+aws_local s3api list-objects-v2 --bucket mi-bucket-prueba
+
+# Eliminar bucket de prueba
+aws_local s3api delete-bucket --bucket mi-bucket-prueba
+```
+
+#### Comprobación funcional de S3
 
 La prueba definitiva es una llamada real a S3 mediante `aws_local`:
 
@@ -412,25 +403,36 @@ aws_local s3api list-buckets
 
 Si esta llamada funciona, el laboratorio está listo para Terraform.
 
-#### 3.8.5. Consultar registros si hay problemas
+#### Persistencia de la función
+
+- La función existe solo en la sesión de Bash actual.
+- Al cerrar la terminal, se pierde y debe redefinirse.
+- Para evitar redefinirla, añádela a `~/.bashrc` o a un script de arranque del proyecto:
 
 ```bash
-# Últimas 100 líneas
-docker compose logs --tail=100 localstack
+# En el directorio del proyecto, crea un archivo sourceable
+cat > .env.localstack <<'EOF'
+aws_local() {
+  AWS_ACCESS_KEY_ID=test \
+  AWS_SECRET_ACCESS_KEY=test \
+  AWS_SESSION_TOKEN= \
+  AWS_CONFIG_FILE=/dev/null \
+  AWS_SHARED_CREDENTIALS_FILE=/dev/null \
+  AWS_EC2_METADATA_DISABLED=true \
+  aws \
+    --endpoint-url http://localhost:4566 \
+    --region us-east-1 \
+    --no-cli-pager \
+    "$@"
+}
+export -f aws_local
+EOF
 
-# Seguir logs en tiempo real
-docker compose logs -f localstack
+# Cárgalo en cada terminal nueva
+source .env.localstack
 ```
 
-#### 3.8.6. Detener LocalStack
-
-Al finalizar la práctica (después de limpiar recursos con Terraform):
-
-```bash
-docker compose down
-```
-
-> **Regla:** Destruye y verifica los recursos Terraform **antes** de detener LocalStack. Detener el contenedor no elimina el estado de Terraform.
+> **Importante:** No guardes credenciales reales en `.env.localstack`. Este archivo es solo para el laboratorio local.
 
 ---
 
@@ -727,7 +729,6 @@ aws_local() {
   AWS_ACCESS_KEY_ID=test \
   AWS_SECRET_ACCESS_KEY=test \
   AWS_SESSION_TOKEN= \
-  AWS_PROFILE= \
   AWS_CONFIG_FILE=/dev/null \
   AWS_SHARED_CREDENTIALS_FILE=/dev/null \
   AWS_EC2_METADATA_DISABLED=true \
@@ -738,6 +739,8 @@ aws_local() {
     "$@"
 }
 ```
+
+> **Nota:** No se establece `AWS_PROFILE` porque `AWS_CONFIG_FILE=/dev/null` ya ignora cualquier perfil configurado. Establecer `AWS_PROFILE=` (vacío) causa error en AWS CLI v2: "The config profile () could not be found".
 
 ### 11.2. Primera consulta
 
