@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <title>Cursos | Agile611</title>
+  <meta
+    name="description"
+    content="Catálogo de cursos de Grafana, Splunk, Terraform, Docker, Prompt Engineering y DevOps con Jenkins."
+  >
+
+  <!-- CSS corporativo del curso de Grafana -->
+  <link
+    rel="stylesheet"
+    href="https://docs.agile611.com/startusinggrafana/assets/css/custom.css"
+  >
+
+  <!-- Estilos específicos del catálogo -->
+  <style>
+    .catalog-page {
+      --catalog-blue: var(--agile-primary, #057eb5);
+      --catalog-blue-dark: var(--agile-primary-dark, #045f89);
+      --catalog-text: var(--agile-text, #242424);
+      --catalog-soft: var(--agile-sidebar, #f5f5f5);
+
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background: #fff;
+      color: var(--catalog-text);
+      font-family: "Nunito", Arial, sans-serif;
+      line-height: 1.6;
+    }
+
+    .catalog-page *,
+    .catalog-page *::before,
+    .catalog-page *::after {
+      box-sizing: border-box;
+    }
+
+    .catalog-container {
+      width: min(92%, 1120px);
+      margin-inline: auto;
+    }
+
+    .catalog-header {
+      background: var(--catalog-blue);
+      color: #fff;
+      padding-block: 1rem;
+    }
+
+    .catalog-brand {
+      color: inherit;
+      text-decoration: none;
+      font-size: 1.25rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .catalog-brand img {
+      height: 40px;
+      width: auto;
+      max-width: 100%;
+    }
+
+    .catalog-main {
+      flex: 1;
+      padding-block: 3rem;
+    }
+
+    .catalog-main h1 {
+      margin: 0 0 0.75rem;
+      font-size: clamp(2rem, 5vw, 2.75rem);
+      line-height: 1.2;
+    }
+
+    .catalog-intro {
+      max-width: 65ch;
+      margin: 0 0 2rem;
+      color: #555;
+    }
+
+    .catalog-grid {
+      display: grid;
+      grid-template-columns:
+        repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+      gap: 1.25rem;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .catalog-grid > li {
+      display: flex;
+    }
+
+    .catalog-card {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      padding: 1.5rem;
+      border: 1px solid #dedede;
+      border-top: 4px solid var(--catalog-blue);
+      border-radius: 6px;
+      background: #fff;
+      color: inherit;
+      text-decoration: none;
+    }
+
+    a.catalog-card {
+      transition: background 150ms ease, border-color 150ms ease;
+    }
+
+    a.catalog-card:hover {
+      background: var(--catalog-soft);
+      border-color: var(--catalog-blue);
+    }
+
+    .catalog-page a:focus-visible {
+      outline: 3px solid var(--catalog-blue-dark);
+      outline-offset: 4px;
+    }
+
+    .catalog-header a:focus-visible {
+      outline-color: #fff;
+    }
+
+    .catalog-card h2 {
+      margin: 0 0 0.75rem;
+      color: var(--catalog-blue-dark);
+      font-size: 1.3rem;
+      line-height: 1.3;
+    }
+
+    .catalog-card p {
+      margin: 0 0 1.5rem;
+    }
+
+    .catalog-action {
+      margin-top: auto;
+      color: var(--catalog-blue-dark);
+      font-weight: 700;
+    }
+
+    .catalog-pending .catalog-action {
+      color: #666;
+      font-weight: 400;
+    }
+
+    .catalog-footer {
+      padding-block: 1rem;
+      background: var(--catalog-blue);
+      color: #fff;
+      font-size: 0.95rem;
+    }
+
+    @media (max-width: 600px) {
+      .catalog-main {
+        padding-block: 2rem;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      a.catalog-card {
+        transition: none;
+      }
+    }
+  </style>
+</head>
+
+<body class="catalog-page">
+  <header class="catalog-header">
+    <div class="catalog-container">
+      <a class="catalog-brand" href="./" aria-label="Agile611 — Inicio">
+        <img src="https://www.agile611.com/wp-content/uploads/2020/09/Negativo.png"
+             alt="Agile611"
+             width="89"
+             height="40"
+             loading="lazy"
+             decoding="async">
+      </a>
+    </div>
+  </header>
+
+  <main class="catalog-main catalog-container">
+    <h1>Catálogo de cursos</h1>
+
+    <p class="catalog-intro">
+      Explora nuestros cursos de observabilidad, infraestructura,
+      contenedores, inteligencia artificial e integración continua.
+    </p>
+
+    <ul class="catalog-grid" id="course-list" aria-label="Cursos"></ul>
+
+    <noscript>
+      <p>
+        Activa JavaScript para ver el catálogo completo.
+        Puedes acceder directamente a estos cursos:
+      </p>
+      <ul>
+        <li>
+          <a href="https://docs.agile611.com/startusinggrafana/">
+            Grafana
+          </a>
+        </li>
+        <li>
+          <a href="https://docs.agile611.com/curso-devops-introduccion-a-integracion-continua-y-jenkins/">
+            DevOps: Introducción a la Integración Continua y Jenkins
+          </a>
+        </li>
+      </ul>
+    </noscript>
+  </main>
+
+  <footer class="catalog-footer">
+    <div class="catalog-container">
+      Agile611 · Recursos de formación
+    </div>
+  </footer>
+
+  <script>
+    // Sustituye null por la URL real de cada curso.
+    const courses = [
+      {
+        title: "Grafana",
+        description:
+          "Dashboards, visualización de datos y observabilidad.",
+        url: "https://docs.agile611.com/curso-grafana/"
+      },
+      {
+        title: "Splunk",
+        description:
+          "Búsqueda, análisis de logs y monitorización de datos.",
+        url: "https://docs.agile611.com/curso-splunk/"
+      },
+      {
+        title: "Terraform",
+        description:
+          "Infraestructura como código y gestión de recursos.",
+        url: "https://docs.agile611.com/curso-terraform/"
+      },
+      {
+        title: "Docker",
+        description:
+          "Contenedores, imágenes y despliegue de aplicaciones.",
+        url: "https://docs.agile611.com/curso-docker/"
+      },
+      {
+        title: "Prompt Engineering",
+        description:
+          "Diseño de instrucciones para modelos de inteligencia artificial.",
+        url: "https://docs.agile611.com/curso-prompt-engineering/"
+      },
+      {
+        title: "DevOps: Introducción a la Integración Continua y Jenkins",
+        description:
+          "Fundamentos de DevOps, integración continua y automatización con jobs y pipelines de Jenkins.",
+        url: "https://docs.agile611.com/curso-jenkins/"
+      }
+    ];
+
+    const list = document.getElementById("course-list");
+
+    courses.forEach(({ title, description, url }) => {
+      const item = document.createElement("li");
+      const card = document.createElement(url ? "a" : "article");
+      const heading = document.createElement("h2");
+      const text = document.createElement("p");
+      const action = document.createElement("span");
+
+      card.className = "catalog-card";
+
+      if (url) {
+        card.href = url;
+        action.textContent = "Acceder al curso →";
+      } else {
+        card.classList.add("catalog-pending");
+        action.textContent = "Enlace pendiente de configurar";
+      }
+
+      heading.textContent = title;
+      text.textContent = description;
+      action.className = "catalog-action";
+
+      card.append(heading, text, action);
+      item.append(card);
+      list.append(item);
+    });
+  </script>
+</body>
+</html>

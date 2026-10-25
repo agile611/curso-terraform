@@ -129,6 +129,68 @@ Las rutas y las reglas de permisos pueden variar entre sistemas.
 El docente debe probar la combinación de herramientas antes de la sesión.
 El alumnado debe registrar la combinación que realmente utiliza.
 
+### 3.5. Instalación de Terraform en Ubuntu 24.04
+
+Terraform no está en los repositorios oficiales de Ubuntu. El método recomendado es utilizar el repositorio oficial de HashiCorp.
+
+```bash
+# 1. Actualizar el índice de paquetes e instalar dependencias
+sudo apt-get update && sudo apt-get install -y gnupg software-properties-common curl
+
+# 2. Añadir la clave GPG oficial de HashiCorp
+curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+
+# 3. Añadir el repositorio oficial de HashiCorp
+echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] \
+https://apt.releases.hashicorp.com $(lsb_release -cs) main" | \
+sudo tee /etc/apt/sources.list.d/hashicorp.list
+
+# 4. Actualizar e instalar Terraform
+sudo apt-get update && sudo apt-get install -y terraform
+```
+
+#### Verificación de la instalación
+
+```bash
+terraform version
+```
+
+Debería mostrar algo similar a:
+
+```text
+Terraform v1.9.x
+on linux_amd64
+```
+
+#### Instalación de una versión específica (opcional)
+
+Si el curso requiere una versión concreta (por ejemplo, `1.8.5`):
+
+```bash
+# Ver versiones disponibles
+apt-cache madison terraform
+
+# Instalar versión específica
+sudo apt-get install -y terraform=1.8.5
+```
+
+#### Actualización posterior
+
+```bash
+sudo apt-get update && sudo apt-get install -y --only-upgrade terraform
+```
+
+#### Desinstalación
+
+```bash
+sudo apt-get remove --purge -y terraform
+sudo rm /etc/apt/sources.list.d/hashicorp.list
+sudo rm /usr/share/keyrings/hashicorp-archive-keyring.gpg
+sudo apt-get update
+```
+
+> **Nota:** El repositorio de HashiCorp usa el nombre en clave de Ubuntu (`noble` para 24.04). El comando `$(lsb_release -cs)` lo detecta automáticamente.
+
 ---
 
 ## 4. Versiones, compatibilidad y reproducibilidad
