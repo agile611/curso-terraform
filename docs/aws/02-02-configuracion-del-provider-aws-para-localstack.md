@@ -833,7 +833,6 @@ aws_local() {
   AWS_ACCESS_KEY_ID=test \
   AWS_SECRET_ACCESS_KEY=test \
   AWS_SESSION_TOKEN= \
-  AWS_PROFILE= \
   AWS_CONFIG_FILE=/dev/null \
   AWS_SHARED_CREDENTIALS_FILE=/dev/null \
   AWS_EC2_METADATA_DISABLED=true \
@@ -844,6 +843,8 @@ aws_local() {
     "$@"
 }
 ```
+
+> **Nota:** No se establece `AWS_PROFILE` porque `AWS_CONFIG_FILE=/dev/null` ya ignora cualquier perfil configurado. Establecer `AWS_PROFILE=` (vacío) causa error en AWS CLI v2: "The config profile () could not be found".
 
 ### 28.2. Primera consulta
 

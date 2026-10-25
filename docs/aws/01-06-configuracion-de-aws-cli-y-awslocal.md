@@ -683,10 +683,10 @@ aws_local() {
   AWS_ACCESS_KEY_ID=test \
   AWS_SECRET_ACCESS_KEY=test \
   AWS_SESSION_TOKEN= \
-  AWS_PROFILE= \
+  AWS_CONFIG_FILE=/dev/null \
+  AWS_SHARED_CREDENTIALS_FILE=/dev/null \
   AWS_EC2_METADATA_DISABLED=true \
   aws \
-    --profile localstack \
     --endpoint-url "${LOCALSTACK_ENDPOINT:?Define LOCALSTACK_ENDPOINT}" \
     --region us-east-1 \
     --no-cli-pager \
@@ -699,7 +699,9 @@ aws_local() {
 Las credenciales ficticias se declaran por invocación.
 El token temporal se vacía.
 El endpoint y la región se declaran explícitamente.
-La función depende de los archivos locales preparados.
+`AWS_CONFIG_FILE=/dev/null` y `AWS_SHARED_CREDENTIALS_FILE=/dev/null` ignoran archivos de configuración locales (incluye perfiles).
+
+> **Nota:** No se establece `AWS_PROFILE` porque `AWS_CONFIG_FILE=/dev/null` ya ignora cualquier perfil configurado. Establecer `AWS_PROFILE=` (vacío) causa error en AWS CLI v2: "The config profile () could not be found".
 
 ---
 
@@ -714,10 +716,11 @@ awslocal_curso() {
   AWS_ACCESS_KEY_ID=test \
   AWS_SECRET_ACCESS_KEY=test \
   AWS_SESSION_TOKEN= \
+  AWS_CONFIG_FILE=/dev/null \
+  AWS_SHARED_CREDENTIALS_FILE=/dev/null \
   AWS_EC2_METADATA_DISABLED=true \
   AWS_PAGER= \
   awslocal \
-    --profile localstack \
     --endpoint-url "${LOCALSTACK_ENDPOINT:?Define LOCALSTACK_ENDPOINT}" \
     --region us-east-1 \
     "$@"
@@ -730,6 +733,8 @@ La modalidad de instalación debe admitir estas opciones.
 El docente debe probar la función con la versión elegida.
 No añadas `--no-cli-pager` suponiendo que toda instalación utiliza AWS CLI versión 2.
 Registra cualquier adaptación necesaria.
+
+> **Nota:** No se establece `AWS_PROFILE` porque `AWS_CONFIG_FILE=/dev/null` ya ignora cualquier perfil configurado. Establecer `AWS_PROFILE=` (vacío) causa error en AWS CLI v2: "The config profile () could not be found".
 
 ---
 
