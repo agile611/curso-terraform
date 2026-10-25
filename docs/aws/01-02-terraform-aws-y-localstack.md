@@ -191,6 +191,75 @@ sudo apt-get update
 
 > **Nota:** El repositorio de HashiCorp usa el nombre en clave de Ubuntu (`noble` para 24.04). El comando `$(lsb_release -cs)` lo detecta automáticamente.
 
+### 3.6. Instalación de AWS CLI v2 en Ubuntu 24.04
+
+AWS CLI v2 no está en los repositorios oficiales de Ubuntu. El método recomendado es el instalador oficial de AWS.
+
+```bash
+# 1. Descargar el instalador
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+
+# 2. Instalar unzip si no está presente
+sudo apt-get update && sudo apt-get install -y unzip
+
+# 3. Descomprimir e instalar
+unzip awscliv2.zip
+sudo ./aws/install
+
+# 4. Limpiar archivos temporales
+rm -rf awscliv2.zip aws
+```
+
+#### Verificación de la instalación
+
+```bash
+aws --version
+```
+
+Debería mostrar algo similar a:
+
+```text
+aws-cli/2.x.x Python/3.x.x Linux/6.x.x exe/x86_64.ubuntu.24
+```
+
+#### Instalación de una versión específica (opcional)
+
+```bash
+# Ver versiones disponibles en el changelog de AWS
+# https://github.com/aws/aws-cli/blob/v2/CHANGELOG.rst
+
+# Descargar versión concreta (ejemplo 2.15.0)
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64-2.15.0.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install --update
+```
+
+#### Actualización posterior
+
+```bash
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip -o awscliv2.zip
+sudo ./aws/install --update
+rm -rf awscliv2.zip aws
+```
+
+#### Desinstalación
+
+```bash
+sudo rm -rf /usr/local/aws-cli /usr/local/bin/aws /usr/local/bin/aws_completer
+```
+
+#### Configuración mínima para el laboratorio
+
+Aunque usaremos credenciales ficticias mediante variables de entorno, AWS CLI requiere una configuración básica para funcionar sin advertencias:
+
+```bash
+aws configure set cli_pager ""
+aws configure set region us-east-1
+```
+
+> **Nota:** Para el laboratorio local con LocalStack, las credenciales reales **no** se configuran aquí. Se pasan mediante la función `aws_local` definida en la sección 11, que anula cualquier configuración guardada.
+
 ---
 
 ## 4. Versiones, compatibilidad y reproducibilidad
