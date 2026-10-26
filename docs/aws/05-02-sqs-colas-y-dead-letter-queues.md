@@ -1,34 +1,28 @@
 # SQS: colas y dead-letter queues con Terraform y LocalStack
 
-Amazon SQS permite intercambiar mensajes entre componentes sin exigir que productores y consumidores trabajen al mismo tiempo.
-
-Una cola recibe mensajes, los mantiene disponibles y los entrega a consumidores.
-
-El consumidor debe procesar cada mensaje y confirmar su finalización mediante una operación de eliminación.
-
-Si el procesamiento falla repetidamente, una dead-letter queue puede aislar el mensaje para su investigación.
-
-Terraform permite declarar estas colas y configurar sus relaciones.
-
-LocalStack permite practicar las operaciones mediante una emulación local de las API de AWS.
-
-En esta lección construirás una cola principal y una cola de mensajes fallidos.
-
-Después practicarás publicación, recepción, eliminación, reintentos y recuperación.
-
 > **Curso de Terraform para AWS.**
 >
 > Todos los despliegues de esta página utilizan LocalStack.
 >
-> Utiliza credenciales ficticias y endpoints locales.
+> Utiliza únicamente credenciales ficticias y endpoints locales.
 >
 > No necesitas una cuenta real de AWS.
+>
+> Una ejecución satisfactoria en LocalStack no equivale a una validación completa en AWS.
+
+Amazon SQS permite intercambiar mensajes entre componentes sin exigir que productores y consumidores trabajen al mismo tiempo.
+Una cola recibe mensajes, los mantiene disponibles y los entrega a consumidores.
+El consumidor debe procesar cada mensaje y confirmar su finalización mediante una operación de eliminación.
+Si el procesamiento falla repetidamente, una dead-letter queue (DLQ) puede aislar el mensaje para su investigación.
+Terraform permite declarar estas colas y configurar sus relaciones.
+LocalStack permite practicar estas operaciones mediante una emulación local de las API de AWS.
+
+En esta lección construirás una cola principal y una cola de mensajes fallidos.
+Después practicarás publicación, recepción, eliminación, reintentos y recuperación.
 
 ---
 
 ## 1. Objetivos de aprendizaje
-
-Esta lección combina infraestructura declarativa y operaciones de mensajería.
 
 ### 1.1. Qué aprenderás
 
@@ -36,7 +30,7 @@ Al finalizar podrás:
 
 - Crear una cola estándar con Terraform.
 - Crear una dead-letter queue compatible.
-- Configurar políticas de redirección.
+- Configurar políticas de redirección (RedrivePolicy).
 - Diferenciar URL, ARN y nombre de una cola.
 - Publicar y recibir mensajes.
 - Utilizar correctamente un receipt handle.
@@ -53,8 +47,6 @@ Construirás dos colas y comprobarás el recorrido de un mensaje fallido.
 
 ## 2. Requisitos previos
 
-Necesitas las herramientas del curso y conocimientos básicos de Terraform.
-
 ### 2.1. Herramientas
 
 Comprueba:
@@ -68,43 +60,102 @@ jq --version
 ```
 
 El laboratorio utiliza Terraform 1.6 o superior dentro de la serie 1.x.
-
 El proveedor AWS se limita a la serie 5.x como base didáctica.
 
 ### 2.2. Conocimientos recomendados
 
 Debes reconocer recursos, variables, outputs, referencias y planes guardados.
-
 Los comandos utilizan una terminal compatible con Bash.
-
 Terraform y AWS CLI se ejecutan en el host.
 
 ---
 
-## 3. Compatibilidad del laboratorio
+## 3. Configuración del laboratorio (Ubuntu 24.04 + Docker + LocalStack)
 
-El docente debe validar la combinación concreta antes de distribuir la práctica.
+### 3.1. Arquitectura
 
-### 3.1. Operaciones que deben comprobarse
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Equipo Anfitrión (Ubuntu 24.04)         │
+│  ┌──────────────┐  ┌──────────────────┐                    │
+│  │   Terraform  │  │   aws_local()    │                    │
+│  │   (gestión)  │  │  (publicar/recibir)│                  │
+│  └──────┬───────┘  └────────┬─────────┘                    │
+│         │                   │                              │
+│         └───────────────────┼──────────────────────────────┘
+│                             ▼                              │
+│              http://127.0.0.1:4566                          │
+│                             │                              │
+│                             ▼                              │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │              Docker Container: LocalStack             │  │
+│  │  ┌─────────────────┐  ┌─────────────────────────┐    │  │
+│  │  │  Cola Principal │  │  Dead-Letter Queue      │    │  │
+│  │  └─────────────────┘  └─────────────────────────┘    │  │
+│  └──────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+```
 
-Verifica en la imagen y edición elegidas:
+### 3.2. `compose.yaml`
 
-- Creación y consulta de colas.
-- Publicación y recepción de mensajes.
-- Eliminación mediante receipt handle.
-- Cambio de visibilidad.
-- Configuración de `RedrivePolicy`.
-- Configuración de `RedriveAllowPolicy`.
-- Transferencia automática a la DLQ.
-- Eliminación de colas.
+```yaml
+services:
+  localstack:
+    image: localstack/localstack:3.7.0
+    ports:
+      - "127.0.0.1:4566:4566"
+    environment:
+      SERVICES: sqs,sts
+      AWS_DEFAULT_REGION: us-east-1
+      DEBUG: "1"
+    volumes:
+      - localstack_data:/var/lib/localstack
 
-### 3.2. Registro de versiones
+volumes:
+  localstack_data:
+```
 
-Conserva la versión de Terraform y `.terraform.lock.hcl`.
+### 3.3. `aws_local`
 
-Documenta la imagen o digest de LocalStack.
+```bash
+aws_local() {
+  AWS_ACCESS_KEY_ID=test \
+  AWS_SECRET_ACCESS_KEY=test \
+  AWS_SESSION_TOKEN= \
+  AWS_CONFIG_FILE=/dev/null \
+  AWS_SHARED_CREDENTIALS_FILE=/dev/null \
+  AWS_EC2_METADATA_DISABLED=true \
+  aws \
+    --endpoint-url http://127.0.0.1:4566 \
+    --region us-east-1 \
+    --no-cli-pager \
+    "$@"
+}
+```
 
-No presupongas compatibilidad completa por utilizar solamente SQS.
+### 3.4. Configuración Terraform base
+
+```hcl
+# versions.tf
+terraform {
+  required_version = ">= 1.6.0, < 2.0.0"
+  required_providers {
+    aws = { source = "hashicorp/aws", version = "~> 5.0" }
+  }
+}
+
+# providers.tf
+provider "aws" {
+  region = "us-east-1"
+  access_key = "test"
+  secret_key = "test"
+  skip_credentials_validation = true
+  skip_metadata_api_check     = true
+  skip_region_validation      = true
+  skip_requesting_account_id  = true
+  endpoints { sqs = "http://127.0.0.1:4566", sts = "http://127.0.0.1:4566" }
+}
+```
 
 ---
 
@@ -115,25 +166,24 @@ Una cola desacopla la publicación de mensajes de su procesamiento.
 ### 4.1. Productor
 
 El productor publica un mensaje.
-
 No necesita esperar a que el consumidor complete el trabajo.
 
 ### 4.2. Consumidor
 
 El consumidor solicita mensajes y procesa los que recibe.
-
 Después elimina aquellos cuyo procesamiento terminó correctamente.
 
 ### 4.3. Flujo conceptual
 
-```text
+```
 Productor → Cola principal → Consumidor
+                ↓ (fallos repetidos)
+           Dead-Letter Queue
 ```
 
 ### 4.4. Consecuencia
 
 La cola permite absorber diferencias temporales entre publicación y procesamiento.
-
 No sustituye la lógica de negocio del consumidor.
 
 ---
@@ -144,1237 +194,328 @@ Un mensaje contiene un cuerpo y puede incluir atributos adicionales.
 
 ### 5.1. Componentes habituales
 
-Puedes encontrar:
+- `Body`: contenido del mensaje (string, máx 256 KB).
+- `MessageId`: identificador único asignado por SQS.
+- `ReceiptHandle`: token para eliminar el mensaje tras procesarlo.
+- `MD5OfBody`: hash para verificación de integridad.
+- `Attributes`: metadatos (ej. `ApproximateReceiveCount`).
 
-- `Body`.
-- `MessageId`.
-- Atributos del mensaje.
-- Atributos de sistema.
-- Un receipt handle cuando se recibe.
+### 5.2. Ciclo de vida
 
-### 5.2. Ejemplo de cuerpo
-
-```json
-{
-  "event_id": "pedido-001",
-  "event_type": "order.created",
-  "order_id": "order-001"
-}
-```
-
-### 5.3. Responsabilidad
-
-SQS transporta el cuerpo.
-
-No valida automáticamente el contrato de negocio de ese JSON.
+1. **Publicado** → disponible en cola.
+2. **Recibido** → invisible para otros consumidores (visibility timeout).
+3. **Procesado** → lógica de negocio.
+4. **Eliminado** → `DeleteMessage` con `ReceiptHandle`.
+5. **Si falla** → vuelve a ser visible tras timeout.
+6. **Tras maxReceiveCount** → movido a DLQ.
 
 ---
 
-## 6. Identificadores de una cola
+## 6. Dead-Letter Queue (DLQ)
 
-Cada identificador tiene una función diferente.
+### 6.1. Propósito
 
-### 6.1. Comparación
+Aislar mensajes que fallan repetidamente para análisis posterior.
+Evita que bloqueen la cola principal.
 
-| **Identificador** | **Uso principal** | **Ejemplo conceptual** |
-|-------------------|-------------------|------------------------|
-| Nombre | Crear o localizar la cola | `curso-sqs-main-alumno01` |
-| URL | Operaciones de mensajes | URL devuelta por SQS |
-| ARN | Políticas y relaciones entre recursos | ARN devuelto por SQS |
-| Dirección Terraform | Identificar el recurso en el estado | `aws_sqs_queue.main` |
-
-No utilices el ARN donde una operación requiere `QueueUrl`.
-
-### 6.2. Regla del laboratorio
-
-Obtendremos URL y ARN desde outputs.
-
-No construiremos identificadores manualmente.
-
-### 6.3. LocalStack
-
-El formato de las URL puede variar según la estrategia de endpoints configurada.
-
----
-
-## 7. Colas estándar y FIFO
-
-La elección afecta a las garantías y a los argumentos utilizados.
-
-### 7.1. Comparación
-
-| **Tipo** | **Características principales** | **Uso orientativo** |
-|----------|---------------------------------|--------------------|
-| Estándar | Entrega al menos una vez y orden de mejor esfuerzo | Trabajo desacoplado de alto rendimiento |
-| FIFO | Orden dentro de grupos y controles de deduplicación | Procesos que necesitan secuencia por entidad |
-
-Esta práctica utiliza colas estándar.
-
-### 7.2. Duplicados
-
-Un consumidor de una cola estándar debe tolerar mensajes duplicados.
-
-### 7.3. Orden
-
-No presupongas que los mensajes se recibirán en el mismo orden de publicación.
-
-### 7.4. Compatibilidad de DLQ
-
-Una cola estándar necesita una DLQ estándar.
-
-Una cola FIFO necesita una DLQ FIFO.
-
----
-
-## 8. Entrega y eliminación
-
-Recibir un mensaje no equivale a completar su procesamiento.
-
-### 8.1. Secuencia correcta
-
-```text
-Recibir → Validar → Procesar → Eliminar
-```
-
-### 8.2. Fallo de procesamiento
-
-Si el procesamiento falla, normalmente no se elimina el mensaje.
-
-Cuando vuelve a estar visible, puede recibirse otra vez.
-
-### 8.3. Riesgo
-
-Eliminar antes de completar el trabajo puede provocar pérdida lógica del evento.
-
-### 8.4. Regla
-
-La eliminación representa una confirmación de procesamiento.
-
-SQS no interpreta el resultado de tu aplicación.
-
----
-
-## 9. Receipt handle
-
-El receipt handle identifica una recepción concreta de un mensaje.
-
-### 9.1. Diferencia principal
-
-`MessageId` identifica el mensaje publicado.
-
-`ReceiptHandle` permite operar sobre una entrega recibida.
-
-### 9.2. Uso
-
-Necesitas el receipt handle para:
-
-- Eliminar el mensaje.
-- Cambiar su visibilidad.
-
-### 9.3. Renovación
-
-Una nueva recepción puede entregar un receipt handle diferente.
-
-### 9.4. Precaución
-
-Utiliza siempre el handle de la recepción más reciente.
-
-No diseñes un consumidor suponiendo que un handle antiguo continúa siendo válido.
-
----
-
-## 10. Tiempo de visibilidad
-
-El tiempo de visibilidad oculta temporalmente un mensaje recibido.
-
-### 10.1. Objetivo
-
-Evitar que otros consumidores reciban inmediatamente el mismo mensaje.
-
-### 10.2. Durante el procesamiento
-
-El mensaje permanece en vuelo.
-
-No se considera eliminado.
-
-### 10.3. Al finalizar el tiempo
-
-Si no se ha eliminado, puede volver a estar disponible.
-
-### 10.4. Límite
-
-La visibilidad no constituye un bloqueo transaccional perfecto.
-
-Un consumidor sigue necesitando tolerancia a duplicados.
-
----
-
-## 11. Elegir la visibilidad
-
-La duración debe corresponder al trabajo real.
-
-### 11.1. Demasiado corta
-
-El mensaje puede volver a entregarse mientras el primer consumidor todavía trabaja.
-
-### 11.2. Demasiado larga
-
-Un fallo puede retrasar innecesariamente el siguiente intento.
-
-### 11.3. Trabajo variable
-
-Un consumidor puede ampliar la visibilidad durante operaciones largas.
-
-### 11.4. Laboratorio
-
-Utilizaremos valores cortos para observar el comportamiento.
-
-No copies esos tiempos a producción sin medir el procesamiento.
-
-### 11.5. Regla
-
-Relaciona visibilidad, duración del trabajo y estrategia de reintentos.
-
----
-
-## 12. Retención de mensajes
-
-La retención determina cuánto tiempo puede conservarse un mensaje.
-
-### 12.1. Diferencia respecto a visibilidad
-
-Visibilidad controla cuándo puede volver a recibirse.
-
-Retención limita cuánto tiempo permanece almacenado.
-
-### 12.2. Expiración
-
-Un mensaje puede expirar aunque ningún consumidor lo haya procesado correctamente.
-
-### 12.3. DLQ
-
-Una DLQ también tiene retención.
-
-### 12.4. Recomendación
-
-En colas estándar, configura una retención de DLQ mayor que la de la cola principal.
-
-### 12.5. Laboratorio
-
-La principal tendrá un día y la DLQ catorce días.
-
----
-
-## 13. Long polling
-
-Long polling permite esperar mensajes durante una solicitud de recepción.
-
-### 13.1. Ventaja
-
-Reduce respuestas vacías y consultas repetidas innecesarias.
-
-### 13.2. Argumento de AWS CLI
-
-```bash
---wait-time-seconds 5
-```
-
-### 13.3. Configuración de cola
+### 6.2. Configuración: `RedrivePolicy`
 
 ```hcl
-receive_wait_time_seconds = 10
-```
-
-### 13.4. Precedencia
-
-Una solicitud puede establecer su propio tiempo de espera.
-
-### 13.5. Precaución
-
-El timeout HTTP del cliente debe permitir la espera solicitada.
-
----
-
-## 14. Qué es una dead-letter queue
-
-Una DLQ recibe mensajes que superan el umbral de recepciones configurado.
-
-### 14.1. Flujo conceptual
-
-```text
-Productor → Cola principal → Intentos de procesamiento
-                                  ↓
-                                 DLQ
-```
-
-### 14.2. Propósito
-
-Aislar mensajes que necesitan investigación o intervención.
-
-### 14.3. Ejemplos de causas
-
-- JSON inválido.
-- Datos incompatibles.
-- Error permanente de negocio.
-- Dependencia externa indisponible.
-- Tiempo de procesamiento mal configurado.
-
-### 14.4. Límite
-
-La DLQ no identifica por sí sola cuál fue la causa del fallo.
-
----
-
-## 15. `maxReceiveCount`
-
-Este parámetro establece el umbral de recepciones antes de la redirección.
-
-### 15.1. Ejemplo del laboratorio
-
-```json
-{
-  "maxReceiveCount": 3
-}
-```
-
-### 15.2. Interpretación
-
-El servicio utiliza las recepciones para determinar cuándo corresponde trasladar el mensaje.
-
-### 15.3. No es un contador de excepciones
-
-SQS no observa directamente cuántas veces falló tu código.
-
-Observa el ciclo de recepción y disponibilidad del mensaje.
-
-### 15.4. Precaución
-
-No presupongas el instante exacto de transferencia a partir de una sola llamada.
-
-La práctica utilizará observación acotada y consultas posteriores.
-
----
-
-## 16. Dos políticas diferentes
-
-La relación entre cola principal y DLQ utiliza políticas con funciones distintas.
-
-### 16.1. Comparación
-
-| **Política** | **Ubicación** | **Responsabilidad** |
-|--------------|---------------|--------------------|
-| `RedrivePolicy` | Cola principal | Elegir DLQ y umbral de recepciones |
-| `RedriveAllowPolicy` | DLQ | Restringir qué colas pueden utilizarla |
-| Política de acceso de cola | Cola correspondiente | Autorizar operaciones sobre SQS |
-
-No confundas redirección con permisos generales de acceso.
-
-### 16.2. Laboratorio
-
-La principal apuntará al ARN de la DLQ.
-
-La DLQ permitirá únicamente a la cola principal configurada.
-
-### 16.3. AWS real
-
-También debes revisar IAM y las políticas de recursos correspondientes.
-
----
-
-## 17. Terraform y los mensajes
-
-Terraform gestionará la infraestructura, no el procesamiento de cada mensaje.
-
-### 17.1. Recursos gestionados
-
-Declararemos:
-
-- Cola principal.
-- DLQ.
-- Política de redirección.
-- Política de autorización de redirección.
-
-### 17.2. Datos de práctica
-
-AWS CLI publicará y consumirá los mensajes.
-
-### 17.3. Estado
-
-El estado no constituye un historial de todos los mensajes enviados.
-
-### 17.4. Consecuencia
-
-Un plan sin cambios no demuestra que las colas estén vacías.
-
----
-
-## 18. Preparación del directorio
-
-Trabaja en una carpeta independiente de otras lecciones.
-
-### 18.1. Crear estructura
-
-```bash
-mkdir -p terraform-sqs-localstack/planes
-mkdir -p terraform-sqs-localstack/mensajes
-mkdir -p terraform-sqs-localstack/resultados
-cd terraform-sqs-localstack
-```
-
-### 18.2. Archivos principales
-
-```text
-terraform-sqs-localstack/
-├── compose.yaml
-├── .env
-├── versions.tf
-├── providers.tf
-├── variables.tf
-├── terraform.tfvars
-├── main.tf
-└── outputs.tf
-```
-
----
-
-## 19. Protección de archivos
-
-Mantén separados configuración, mensajes ficticios y artefactos operativos.
-
-### 19.1. `.gitignore`
-
-```gitignore
-.terraform/
-*.tfstate
-*.tfstate.*
-*.tfplan
-.env
-planes/
-resultados/
-crash.log
-```
-
-### 19.2. Qué conservar
-
-Versiona la configuración, los mensajes ficticios y `.terraform.lock.hcl`.
-
-### 19.3. Precaución
-
-No publiques estados o resultados que contengan mensajes reales sensibles.
-
----
-
-## 20. Selección de LocalStack
-
-Utiliza la imagen validada por el docente.
-
-### 20.1. Referencia
-
-Sustituye el marcador antes de continuar:
-
-```bash
-export LOCALSTACK_IMAGE='SUSTITUIR_POR_IMAGEN_VALIDADA'
-printf 'LOCALSTACK_IMAGE=%s\n' "$LOCALSTACK_IMAGE" > .env
-```
-
-### 20.2. Reproducibilidad
-
-Utiliza una etiqueta fija o un digest.
-
-### 20.3. Alcance
-
-La práctica necesita únicamente SQS.
-
-### 20.4. Advertencia
-
-No presupongas que cualquier edición o versión implementa todas las operaciones de redirección.
-
----
-
-## 21. Docker Compose y URL de cola
-
-La configuración debe devolver URL utilizables desde el host.
-
-### 21.1. `compose.yaml`
-
-```yaml
-services:
-  localstack:
-    image: ${LOCALSTACK_IMAGE:?Define LOCALSTACK_IMAGE}
-    ports:
-      - "127.0.0.1:4566:4566"
-    environment:
-      SERVICES: sqs
-      AWS_DEFAULT_REGION: us-east-1
-      SQS_ENDPOINT_STRATEGY: path
-```
-
-### 21.2. Arranque
-
-```bash
-docker compose up -d
-docker compose ps
-```
-
-### 21.3. Verificación
-
-Comprueba que la imagen elegida admite esta estrategia de endpoints.
-
----
-
-## 22. Credenciales ficticias y conectividad
-
-Configura AWS CLI en la terminal actual.
-
-### 22.1. Variables
-
-```bash
-export AWS_ACCESS_KEY_ID=test
-export AWS_SECRET_ACCESS_KEY=test
-export AWS_DEFAULT_REGION=us-east-1
-unset AWS_SESSION_TOKEN AWS_PROFILE AWS_DEFAULT_PROFILE
-```
-
-### 22.2. Consulta inicial
-
-```bash
-aws \
-  --endpoint-url=http://localhost:4566 \
-  --region us-east-1 \
-  sqs list-queues
-```
-
-### 22.3. Continuación
-
-Espera una respuesta válida antes de desplegar Terraform.
-
----
-
-## 23. Requisitos y proveedor
-
-Crea los archivos de conexión.
-
-### 23.1. `versions.tf`
-
-```hcl
-terraform {
-  required_version = ">= 1.6.0, < 2.0.0"
-
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
-}
-```
-
-### 23.2. `providers.tf`
-
-```hcl
-provider "aws" {
-  region                      = "us-east-1"
-  access_key                  = "test"
-  secret_key                  = "test"
-  skip_credentials_validation = true
-  skip_metadata_api_check     = true
-  skip_requesting_account_id  = true
-
-  endpoints {
-    sqs = "http://localhost:4566"
-  }
-}
-```
-
----
-
-## 24. Variables del laboratorio
-
-Crea `variables.tf`.
-
-### 24.1. Declaraciones
-
-```hcl
-variable "suffix" {
-  type     = string
-  nullable = false
-
-  validation {
-    condition     = can(regex("^[a-z0-9]{4,8}$", var.suffix))
-    error_message = "Usa entre 4 y 8 caracteres alfanuméricos."
-  }
-}
-
-variable "max_receive_count" {
-  type    = number
-  default = 3
-
-  validation {
-    condition = (
-      var.max_receive_count >= 1 &&
-      var.max_receive_count <= 10 &&
-      var.max_receive_count == floor(var.max_receive_count)
-    )
-    error_message = "El laboratorio admite enteros entre 1 y 10."
-  }
-}
-```
-
----
-
-## 25. Colas principal y de mensajes fallidos
-
-Crea `main.tf`.
-
-### 25.1. Recursos
-
-```hcl
-resource "aws_sqs_queue" "dlq" {
-  name                      = "curso-sqs-dlq-${var.suffix}"
-  message_retention_seconds = 1209600
-
-  tags = {
-    Laboratory = "LocalStack"
-    Role       = "DeadLetterQueue"
-  }
-}
-
-resource "aws_sqs_queue" "main" {
-  name                       = "curso-sqs-main-${var.suffix}"
-  visibility_timeout_seconds = 10
-  message_retention_seconds  = 86400
-  receive_wait_time_seconds  = 10
-
-  tags = {
-    Laboratory = "LocalStack"
-    Role       = "MainQueue"
-  }
-}
-```
-
----
-
-## 26. Políticas de redirección
-
-Añade los recursos al mismo archivo.
-
-### 26.1. Configuración
-
-```hcl
-resource "aws_sqs_queue_redrive_allow_policy" "dlq" {
-  queue_url = aws_sqs_queue.dlq.id
-
-  redrive_allow_policy = jsonencode({
-    redrivePermission = "byQueue"
-    sourceQueueArns   = [aws_sqs_queue.main.arn]
+resource "aws_sqs_queue" "principal" {
+  name = "tf-principal-001"
+  redrive_policy = jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.dlq.arn
+    maxReceiveCount     = 3
   })
 }
 
-resource "aws_sqs_queue_redrive_policy" "main" {
-  queue_url = aws_sqs_queue.main.id
+resource "aws_sqs_queue" "dlq" {
+  name = "tf-dlq-001"
+}
+```
 
+- `maxReceiveCount`: reintentos antes de mover a DLQ (1-1000).
+- `deadLetterTargetArn`: ARN de la cola DLQ (debe ser misma región/cuenta).
+
+### 6.3. `RedriveAllowPolicy` (opcional)
+
+Controla qué colas pueden usar esta cola como DLQ.
+
+```hcl
+resource "aws_sqs_queue" "dlq" {
+  name = "tf-dlq-001"
+  redrive_allow_policy = jsonencode({
+    redrivePermission = "byQueue"
+    sourceQueueArns   = [aws_sqs_queue.principal.arn]
+  })
+}
+```
+
+---
+
+## 7. Práctica guiada paso a paso
+
+### Paso 1: Preparar
+
+```bash
+mkdir -p sqs-dlq/evidencias
+cd sqs-dlq
+docker compose up -d
+curl -s http://127.0.0.1:4566/_localstack/health | jq .
+source .env.localstack
+```
+
+### Paso 2: Configuración Terraform
+
+```hcl
+# versions.tf, providers.tf (sección 3.4)
+
+# variables.tf
+variable "project" { type = string, default = "sqs-demo" }
+variable "max_receive_count" { type = number, default = 3 }
+
+# locals.tf
+locals {
+  prefix = var.project
+  tags = { Leccion = "SQSDLQ" }
+}
+
+# main.tf
+# DLQ (debe crearse primero por referencia en redrive_policy)
+resource "aws_sqs_queue" "dlq" {
+  name = "${local.prefix}-dlq"
+  tags = local.tags
+}
+
+# Cola principal con RedrivePolicy
+resource "aws_sqs_queue" "principal" {
+  name = "${local.prefix}-principal"
   redrive_policy = jsonencode({
     deadLetterTargetArn = aws_sqs_queue.dlq.arn
     maxReceiveCount     = var.max_receive_count
   })
-
-  depends_on = [
-    aws_sqs_queue_redrive_allow_policy.dlq
-  ]
+  tags = local.tags
 }
+
+# RedriveAllowPolicy en DLQ (opcional pero recomendado)
+resource "aws_sqs_queue" "dlq" {
+  name = "${local.prefix}-dlq"
+  redrive_allow_policy = jsonencode({
+    redrivePermission = "byQueue"
+    sourceQueueArns   = [aws_sqs_queue.principal.arn]
+  })
+  tags = local.tags
+}
+
+# outputs.tf
+output "principal_url" { value = aws_sqs_queue.principal.id }
+output "principal_arn" { value = aws_sqs_queue.principal.arn }
+output "dlq_url"       { value = aws_sqs_queue.dlq.id }
+output "dlq_arn"       { value = aws_sqs_queue.dlq.arn }
 ```
 
----
-
-## 27. Entradas, outputs y dependencias
-
-Crea los archivos restantes.
-
-### 27.1. `terraform.tfvars`
-
-```hcl
-suffix            = "alumno01"
-max_receive_count = 3
-```
-
-### 27.2. `outputs.tf`
-
-```hcl
-output "main_queue_url" {
-  value = aws_sqs_queue.main.id
-}
-
-output "dlq_queue_url" {
-  value = aws_sqs_queue.dlq.id
-}
-
-output "queue_arns" {
-  value = {
-    main = aws_sqs_queue.main.arn
-    dlq  = aws_sqs_queue.dlq.arn
-  }
-}
-```
-
-### 27.3. Justificación
-
-La dependencia explícita configura primero la autorización de redirección.
-
----
-
-## 28. Sesión 1: desplegar la infraestructura
-
-Duración orientativa: 20 minutos.
-
-### 28.1. Secuencia
+### Paso 3: Desplegar
 
 ```bash
 terraform init
-terraform fmt -recursive
+terraform fmt
 terraform validate
-terraform plan -out=planes/create.tfplan
-terraform show planes/create.tfplan
-terraform apply planes/create.tfplan
+terraform plan -out=sqs.tfplan
+terraform show sqs.tfplan
+# Verificar: principal tiene redrive_policy apuntando a dlq.arn
+
+terraform apply sqs.tfplan
 ```
 
-### 28.2. Resultado esperado
-
-Deben crearse cuatro recursos Terraform.
-
-En SQS existirán dos colas.
-
-### 28.3. Variables de terminal
+### Paso 4: Verificar colas
 
 ```bash
-MAIN_URL="$(terraform output -raw main_queue_url)"
-DLQ_URL="$(terraform output -raw dlq_queue_url)"
+aws_local sqs list-queues
+aws_local sqs get-queue-attributes --queue-url $(terraform output -raw principal_url) --attribute-names All
+aws_local sqs get-queue-attributes --queue-url $(terraform output -raw dlq_url) --attribute-names All
 ```
 
----
-
-## 29. Sesión 2: verificar la configuración remota
-
-Consulta los atributos mediante AWS CLI.
-
-### 29.1. Cola principal
+### Paso 5: Publicar mensajes (éxito)
 
 ```bash
-aws --endpoint-url=http://localhost:4566 --region us-east-1 \
-  sqs get-queue-attributes \
-  --queue-url "$MAIN_URL" \
-  --attribute-names All \
-  > resultados/main-attributes.json
+# Mensaje normal
+aws_local sqs send-message \
+  --queue-url $(terraform output -raw principal_url) \
+  --message-body '{"tipo": "normal", "datos": "procesar esto"}'
+
+# Recibir
+RECV=$(aws_local sqs receive-message --queue-url $(terraform output -raw principal_url) --max-number-of-messages 1)
+MSG_BODY=$(echo "$RECV" | jq -r '.Messages[0].Body')
+RECEIPT=$(echo "$RECV" | jq -r '.Messages[0].ReceiptHandle')
+echo "Recibido: $MSG_BODY"
+
+# Procesar (simulado: éxito)
+echo "Procesando..."
+
+# Eliminar (confirmar)
+aws_local sqs delete-message --queue-url $(terraform output -raw principal_url) --receipt-handle "$RECEIPT"
+echo "Mensaje eliminado correctamente"
 ```
 
-### 29.2. DLQ
+### Paso 6: Simular fallo y reintentos (hacia DLQ)
 
 ```bash
-aws --endpoint-url=http://localhost:4566 --region us-east-1 \
-  sqs get-queue-attributes \
-  --queue-url "$DLQ_URL" \
-  --attribute-names All \
-  > resultados/dlq-attributes.json
-```
-
-### 29.3. Lectura
-
-Utiliza `jq` y `fromjson` para examinar las políticas almacenadas como cadenas JSON.
-
----
-
-## 30. Sesión 3: publicar un mensaje correcto
-
-Prepara un evento ficticio.
-
-### 30.1. `mensajes/correcto.json`
-
-```json
-{
-  "event_id": "evento-correcto-001",
-  "event_type": "order.created",
-  "order_id": "order-001",
-  "simulate_failure": false
-}
-```
-
-### 30.2. Publicación
-
-```bash
-aws --endpoint-url=http://localhost:4566 --region us-east-1 \
-  sqs send-message \
-  --queue-url "$MAIN_URL" \
-  --message-body file://mensajes/correcto.json \
-  > resultados/send-correct.json
-```
-
-### 30.3. Comprobación
-
-Examina `MessageId` con `jq`.
-
----
-
-## 31. Sesión 4: recibir y procesar el mensaje
-
-La recepción no elimina el mensaje.
-
-### 31.1. Solicitud
-
-```bash
-aws --endpoint-url=http://localhost:4566 --region us-east-1 \
-  sqs receive-message \
-  --queue-url "$MAIN_URL" \
-  --max-number-of-messages 1 \
-  --wait-time-seconds 5 \
-  --visibility-timeout 30 \
-  --message-system-attribute-names All \
-  > resultados/receive-correct.json
-```
-
-### 31.2. Lectura
-
-```bash
-jq '.Messages[]? | {MessageId, Body, Attributes}' \
-  resultados/receive-correct.json
-```
-
-### 31.3. Validación
-
-Comprueba que el cuerpo corresponde al evento correcto antes de eliminarlo.
-
----
-
-## 32. Sesión 5: confirmar mediante eliminación
-
-Utiliza el handle recibido, no el identificador de publicación.
-
-### 32.1. Capturar handle
-
-```bash
-RECEIPT="$(jq -er '.Messages[0].ReceiptHandle' resultados/receive-correct.json)"
-```
-
-### 32.2. Eliminar
-
-```bash
-aws --endpoint-url=http://localhost:4566 --region us-east-1 \
-  sqs delete-message \
-  --queue-url "$MAIN_URL" \
-  --receipt-handle "$RECEIPT"
-```
-
-### 32.3. Precaución
-
-Si no recibiste ningún mensaje, no continúes con un handle vacío.
-
-### 32.4. Entregable
-
-Explica por qué `MessageId` no sirve para esta operación.
-
----
-
-## 33. Sesión 6: observar la visibilidad
-
-Publica otro mensaje correcto y no lo elimines inmediatamente.
-
-### 33.1. Recepción
-
-Recíbelo con `--visibility-timeout 10`.
-
-Guarda el resultado en `resultados/visibility.json`.
-
-### 33.2. Segunda consulta
-
-Solicita mensajes inmediatamente con una espera breve.
-
-El mensaje recién recibido normalmente permanecerá oculto.
-
-### 33.3. Espera
-
-Espera más de diez segundos y vuelve a recibir.
-
-### 33.4. Finalización
-
-Elimina el mensaje utilizando el handle de la recepción más reciente.
-
-### 33.5. Límite
-
-La ausencia en una única consulta no demuestra que la cola esté vacía.
-
----
-
-## 34. Sesión 7: cambiar la visibilidad de una recepción
-
-Un consumidor puede ajustar el tiempo disponible para trabajar.
-
-### 34.1. Patrón de operación
-
-```bash
-aws --endpoint-url=http://localhost:4566 --region us-east-1 \
-  sqs change-message-visibility \
-  --queue-url "$MAIN_URL" \
-  --receipt-handle "$RECEIPT" \
-  --visibility-timeout 20
-```
-
-### 34.2. Requisito
-
-`RECEIPT` debe corresponder a una recepción actual todavía válida.
-
-### 34.3. Liberación inmediata
-
-Un valor cero permite que el mensaje vuelva a estar disponible.
-
-### 34.4. Precaución
-
-No ejecutes este ejemplo con el handle de un mensaje ya eliminado.
-
----
-
-## 35. Sesión 8: preparar un mensaje fallido
-
-Antes de empezar, termina o elimina los mensajes de las sesiones anteriores.
-
-### 35.1. `mensajes/fallido.json`
-
-```json
-{
-  "event_id": "evento-fallido-001",
-  "event_type": "order.created",
-  "order_id": "order-invalid",
-  "simulate_failure": true
-}
-```
-
-### 35.2. Publicación
-
-```bash
-aws --endpoint-url=http://localhost:4566 --region us-east-1 \
-  sqs send-message --queue-url "$MAIN_URL" \
-  --message-body file://mensajes/fallido.json \
-  > resultados/send-failed.json
-```
-
-### 35.3. Simulación
-
-El consumidor de práctica no eliminará este mensaje.
-
----
-
-## 36. Sesión 9: provocar reintentos de forma acotada
-
-El siguiente bucle es una herramienta didáctica, no un consumidor de producción.
-
-### 36.1. Recepciones repetidas
-
-```bash
-FOUND_DLQ=false
-
-for attempt in $(seq 1 12); do
-  aws --endpoint-url=http://localhost:4566 --region us-east-1 \
-    sqs receive-message --queue-url "$MAIN_URL" \
-    --max-number-of-messages 1 --wait-time-seconds 1 \
-    --visibility-timeout 0 \
-    --message-system-attribute-names All \
-    > resultados/retry.json
-
-  jq -r '.Messages[]? |
-    "Recepción: \(.MessageId), contador: \(.Attributes.ApproximateReceiveCount)"' \
-    resultados/retry.json
-```
-
-### 36.2. Continuación
-
-Completa el mismo bucle con el fragmento de la sección siguiente.
-
----
-
-## 37. Sesión 9: observar la llegada a la DLQ
-
-La observación debe considerar transferencia y disponibilidad asíncronas.
-
-### 37.1. Segunda parte del bucle
-
-```bash
-  aws --endpoint-url=http://localhost:4566 --region us-east-1 \
-    sqs receive-message --queue-url "$DLQ_URL" \
-    --max-number-of-messages 1 --wait-time-seconds 1 \
-    --visibility-timeout 120 \
-    --message-system-attribute-names All \
-    > resultados/dlq-receive.json
-
-  if jq -e '.Messages[0] != null' resultados/dlq-receive.json >/dev/null; then
-    FOUND_DLQ=true
-    break
-  fi
-
-  sleep 1
+# Publicar mensaje que "fallará"
+aws_local sqs send-message \
+  --queue-url $(terraform output -raw principal_url) \
+  --message-body '{"tipo": "fallo", "datos": "esto fallara"}'
+
+# Recibir y NO eliminar (simular fallo) - repetir 3 veces (maxReceiveCount=3)
+for i in 1 2 3; do
+  echo "Intento $i:"
+  RECV=$(aws_local sqs receive-message --queue-url $(terraform output -raw principal_url) --max-number-of-messages 1 --attribute-names All)
+  RECEIPT=$(echo "$RECV" | jq -r '.Messages[0].ReceiptHandle')
+  COUNT=$(echo "$RECV" | jq -r '.Messages[0].Attributes.ApproximateReceiveCount')
+  echo "  ReceiveCount: $COUNT"
+  # NO eliminamos → vuelve a cola tras visibility timeout (30s default)
+  # Para acelerar: esperar o cambiar visibility timeout
+  sleep 2
 done
 
-printf 'Mensaje observado en DLQ: %s\n' "$FOUND_DLQ"
+# Verificar: mensaje debe estar en DLQ
+aws_local sqs get-queue-attributes --queue-url $(terraform output -raw dlq_url) --attribute-names ApproximateNumberOfMessages
+aws_local sqs receive-message --queue-url $(terraform output -raw dlq_url) --max-number-of-messages 1
 ```
 
-### 37.2. Seguridad
-
-El bucle no elimina mensajes de ninguna de las dos colas.
-
----
-
-## 38. Interpretar el experimento de reintentos
-
-El resultado debe explicarse mediante observación, no mediante una cuenta rígida de llamadas.
-
-### 38.1. Resultado esperado
-
-El mensaje fallido debe terminar disponible en la DLQ.
-
-### 38.2. Contador
-
-`ApproximateReceiveCount` ayuda a observar recepciones.
-
-No representa un registro de excepciones de aplicación.
-
-### 38.3. Si no se observa transferencia
-
-Revisa políticas, tiempos, versión de LocalStack y mensajes pendientes.
-
-Consulta nuevamente después de una espera.
-
-### 38.4. Precaución
-
-Una respuesta vacía no demuestra una transferencia correcta.
-
-### 38.5. Entregable
-
-Conserva el cuerpo recibido en la DLQ y verifica su `event_id`.
-
----
-
-## 39. Inspección de mensajes fallidos
-
-La DLQ necesita un procedimiento de investigación.
-
-### 39.1. Consultar el mensaje capturado
+### Paso 7: Recuperar de DLQ
 
 ```bash
-jq '.Messages[0] |
-  {MessageId, Body, Attributes}' resultados/dlq-receive.json
+# Leer mensaje en DLQ
+DLQ_RECV=$(aws_local sqs receive-message --queue-url $(terraform output -raw dlq_url) --max-number-of-messages 1)
+DLQ_BODY=$(echo "$DLQ_RECV" | jq -r '.Messages[0].Body')
+DLQ_RECEIPT=$(echo "$DLQ_RECV" | jq -r '.Messages[0].ReceiptHandle')
+echo "Mensaje en DLQ: $DLQ_BODY"
+
+# Opción A: Reprocesar (reenviar a principal)
+aws_local sqs send-message --queue-url $(terraform output -raw principal_url) --message-body "$DLQ_BODY"
+aws_local sqs delete-message --queue-url $(terraform output -raw dlq_url) --receipt-handle "$DLQ_RECEIPT"
+
+# Opción B: Analizar y descartar
+# aws_local sqs delete-message --queue-url $(terraform output -raw dlq_url) --receipt-handle "$DLQ_RECEIPT"
 ```
 
-### 39.2. Contrato
-
-Valida el JSON y sus campos de negocio.
-
-### 39.3. Evidencia externa
-
-Consulta logs del consumidor y sus dependencias.
-
-### 39.4. Límite
-
-El cuerpo y los atributos de SQS no incluyen automáticamente una traza del error de tu aplicación.
-
-### 39.5. Seguridad
-
-No elimines el mensaje antes de decidir cómo conservar la evidencia necesaria.
-
----
-
-## 40. Recuperación manual de un mensaje
-
-Una recuperación controlada puede publicar una copia corregida en la principal.
-
-### 40.1. Preparar contenido
+### Paso 8: Limpiar
 
 ```bash
-jq -r '.Messages[0].Body' resultados/dlq-receive.json \
-  | jq '.simulate_failure = false | .recovered = true' \
-  > mensajes/recuperado.json
-```
-
-### 40.2. Publicación
-
-```bash
-aws --endpoint-url=http://localhost:4566 --region us-east-1 \
-  sqs send-message --queue-url "$MAIN_URL" \
-  --message-body file://mensajes/recuperado.json \
-  > resultados/send-recovered.json
-```
-
-### 40.3. Advertencia
-
-Esta publicación y la eliminación en DLQ son operaciones separadas.
-
-No forman una transacción atómica.
-
----
-
-## 41. Completar la recuperación
-
-Elimina de la DLQ únicamente después de confirmar la publicación.
-
-### 41.1. Handle de DLQ
-
-```bash
-DLQ_RECEIPT="$(jq -er '.Messages[0].ReceiptHandle' resultados/dlq-receive.json)"
-```
-
-### 41.2. Eliminación
-
-```bash
-aws --endpoint-url=http://localhost:4566 --region us-east-1 \
-  sqs delete-message \
-  --queue-url "$DLQ_URL" \
-  --receipt-handle "$DLQ_RECEIPT"
-```
-
-### 41.3. Tiempo de trabajo
-
-Si venció la visibilidad, recibe nuevamente y verifica el evento antes de eliminar.
-
-### 41.4. Riesgo
-
-Si se publicó la copia pero no se eliminó el original, una recuperación posterior puede duplicarlo.
-
----
-
-## 42. Procesar el mensaje recuperado e idempotencia
-
-La recuperación no elimina la necesidad de tolerar duplicados.
-
-### 42.1. Práctica
-
-Recibe el mensaje corregido desde la principal.
-
-Comprueba `simulate_failure = false`.
-
-Simula procesamiento correcto y elimínalo.
-
-### 42.2. Identidad de negocio
-
-Conserva un `event_id` estable para reconocer el evento.
-
-### 42.3. Idempotencia
-
-El consumidor debe evitar repetir efectos incompatibles si procesa el evento más de una vez.
-
-### 42.4. Ejemplo
-
-No debe cobrar dos veces un pedido por recibir dos copias del mismo evento.
-
-### 42.5. Límite
-
-SQS no implementa por sí solo la transacción de tu base de datos.
-
----
-
-## 43. Redrive nativo y diferencias de retención
-
-La recuperación nativa requiere revisar compatibilidad y permisos.
-
-### 43.1. Operación opcional
-
-SQS dispone de operaciones como `start-message-move-task`.
-
-Pueden trasladar mensajes desde una DLQ compatible hacia una cola de destino.
-
-No forman parte de la práctica obligatoria porque su soporte debe comprobarse en LocalStack.
-
-### 43.2. Permisos
-
-En AWS real debes revisar permisos sobre origen, destino y cifrado.
-
-### 43.3. Retención en colas estándar
-
-El tiempo de expiración sigue relacionado con el timestamp original de envío.
-
-### 43.4. Retención en FIFO
-
-Al trasladarse a una DLQ FIFO, el timestamp de envío se reinicia.
-
-### 43.5. Métrica
-
-La edad mostrada en DLQ no debe confundirse automáticamente con toda la antigüedad del evento.
-
----
-
-## 44. Métricas, atributos y purgado
-
-Las métricas ayudan a observar, pero no sustituyen pruebas de procesamiento.
-
-### 44.1. Atributos útiles
-
-Consulta:
-
-- `ApproximateNumberOfMessages`.
-- `ApproximateNumberOfMessagesNotVisible`.
-- `ApproximateNumberOfMessagesDelayed`.
-
-### 44.2. Aproximación
-
-Estos contadores no constituyen una enumeración exacta e instantánea de todos los mensajes.
-
-### 44.3. Purgado
-
-`purge-queue` elimina mensajes de una cola, incluidos mensajes en vuelo.
-
-En AWS real puede tardar hasta sesenta segundos y tiene restricciones entre solicitudes.
-
-### 44.4. Advertencia
-
-No utilices purgado para confirmar el procesamiento correcto.
-
-Es una operación destructiva sobre datos.
-
----
-
-## 45. Limpieza, diagnóstico y diferencias respecto a AWS real
-
-Mantén LocalStack activo durante la destrucción.
-
-### 45.1. Plan y aplicación
-
-```bash
-terraform plan -destroy -out=planes/destroy.tfplan
-terraform show planes/destroy.tfplan
-terraform apply planes/destroy.tfplan
-terraform state list
-aws --endpoint-url=http://localhost:4566 --region us-east-1 sqs list-queues
+terraform destroy -auto-approve
+aws_local sqs list-queues
 docker compose down
 ```
 
-### 45.2. Diagnóstico
+---
 
-Revisa endpoint, URL de cola, políticas, handles y visibilidad antes de repetir comandos.
+## 8. Sesiones guiadas
 
-### 45.3. AWS real
+### 8.1. Sesión 1: Cola principal y DLQ (30 min)
 
-Debes considerar costes, IAM, cifrado, cuotas y observabilidad.
+1. Crear DLQ + Principal con `redrive_policy`
+2. `plan` → verificar `redrive_policy` y `deadLetterTargetArn`
+3. `apply` → verificar atributos con `aws_local`
+4. **Entrega**: Plan + verificación colas + política redrive
 
-Las políticas pueden tardar en propagarse.
+### 8.2. Sesión 2: Publicar, recibir, eliminar (25 min)
 
-LocalStack no reproduce necesariamente todos los tiempos, errores ni garantías operativas.
+1. Publicar mensaje → recibir → procesar → eliminar
+2. Verificar `ReceiptHandle` uso correcto
+3. **Entrega**: Evidencia ciclo completo mensaje exitoso
+
+### 8.3. Sesión 3: Fallos, DLQ y recuperación (30 min)
+
+1. Publicar mensaje → recibir 3 veces sin eliminar → verificar DLQ
+2. Recuperar de DLQ → reenviar a principal → procesar → eliminar
+3. **Entrega**: Evidencia mensaje en DLQ + recuperación exitosa
 
 ---
 
-## 46. Ejercicios y resumen
+## 9. Ejercicios de refuerzo
 
-Consolida la relación entre recepción, procesamiento y recuperación.
+### 9.1. Ejercicio de identificación
 
-### 46.1. Ejercicios
+Explica la diferencia entre:
+- `QueueUrl` vs `QueueArn` vs `QueueName`
+- `ReceiptHandle` vs `MessageId`
+- `VisibilityTimeout` vs `MessageRetentionPeriod`
+- `RedrivePolicy` vs `RedriveAllowPolicy`
 
-1. Añade atributos de mensaje a un evento ficticio.
-2. Observa dos recepciones sin eliminar el mensaje.
-3. Cambia la visibilidad de una recepción actual.
-4. Envía un mensaje fallido a la DLQ mediante reintentos.
-5. Corrige su contenido y recupéralo de forma controlada.
-6. Explica el riesgo de duplicación durante recuperación.
-7. Documenta una estrategia de idempotencia.
+### 9.2. Ejercicio de interpretación
 
-### 46.2. Ideas esenciales
+Una cola tiene `maxReceiveCount = 5` y `VisibilityTimeout = 30s`.
+Un mensaje se recibe y no se elimina.
+¿Cuándo vuelve a estar visible? ¿Cuántas veces se intentará antes de ir a DLQ?
+¿Qué pasa si el consumidor tarda 40s en procesar?
 
-Recibir no elimina; eliminar confirma.
+### 9.3. Ejercicio con asistente de IA
 
-La DLQ aísla mensajes, pero no repara sus causas.
+```text
+Instrucción:
+Genera una configuración Terraform para:
+- Cola principal "pedidos" con maxReceiveCount=5
+- DLQ "pedidos-dlq" con RedriveAllowPolicy restringida a "pedidos"
+- Outputs: URLs, ARNs, RedrivePolicy JSON
+Incluye: variables para maxReceiveCount, visibilityTimeout, messageRetentionPeriod.
+```
 
-### 46.3. Idea final
+---
 
-Una cola bien configurada necesita consumidores que gestionen reintentos, duplicados y fallos con un procedimiento explícito y verificable.
+## 10. Limitaciones LocalStack en SQS
+
+| Característica | LocalStack | AWS Real |
+|----------------|------------|----------|
+| Colas estándar | ✅ | ✅ |
+| Colas FIFO | ⚠️ Parcial | ✅ |
+| DLQ / RedrivePolicy | ✅ | ✅ |
+| RedriveAllowPolicy | ✅ | ✅ |
+| Message attributes | ✅ | ✅ |
+| Batch operations | ✅ | ✅ |
+| Long polling | ✅ | ✅ |
+| Dead-letter queue metrics | ⚠️ Básico | ✅ CloudWatch |
+| Server-side encryption (SSE) | ❌ | ✅ |
+
+---
+
+## 11. Diagnóstico de errores frecuentes
+
+| Síntoma | Qué comprobar | Qué evitar |
+|---------|---------------|------------|
+| `QueueDoesNotExist` | Nombre/URL incorrecta | Usar output `queue_url` |
+| `ReceiptHandleIsInvalid` | Handle expirado o ya usado | Usar handle inmediato tras receive |
+| Mensaje no va a DLQ | `maxReceiveCount` no alcanzado | Verificar `ApproximateReceiveCount` |
+| `InvalidParameterValue` en RedrivePolicy | ARN DLQ incorrecto | Usar `aws_sqs_queue.dlq.arn` |
+| Mensaje duplicado | No se eliminó tras procesar | Siempre `delete-message` tras éxito |
+
+---
+
+## 12. Evaluación y cierre
+
+### 12.1. Rúbrica (0-2 puntos)
+
+| Criterio | 0 pts | 1 pt | 2 pts |
+|----------|-------|------|-------|
+| Cola + DLQ | No crea | Crea sin RedrivePolicy | Crea + RedrivePolicy + AllowPolicy |
+| Publicar/Recibir | No hace | Solo publicar | Publicar + Recibir + Eliminar |
+| Fallos → DLQ | No simula | Simula sin verificar | Simula + verifica DLQ + recupera |
+| ReceiptHandle | No usa | Usa incorrecto | Usa correctamente en delete |
+| Limpieza | No limpia | Parcial | Destroy + list-queues vacío |
+
+### 12.2. Checklist final
+
+- [ ] DLQ creada antes que principal (orden de dependencia)
+- [ ] `redrive_policy` en principal con `deadLetterTargetArn` y `maxReceiveCount`
+- [ ] `redrive_allow_policy` en DLQ (opcional)
+- [ ] Mensaje publicado, recibido, eliminado (éxito)
+- [ ] Mensaje fallado 3 veces → aparece en DLQ
+- [ ] Mensaje recuperado de DLQ y reprocesado
+- [ ] `terraform destroy` limpia ambas colas
+- [ ] `aws_local sqs list-queues` vacío
+
+### 12.3. Idea principal
+
+> **SQS = búfer asíncrono. DLQ = red de seguridad.**
+> `RedrivePolicy` conecta principal → DLQ. `maxReceiveCount` define tolerancia a fallos.
+> `ReceiptHandle` = llave de eliminación. Úsalo SIEMPRE tras procesar.
+> **Mensaje en DLQ ≠ perdido. Mensaje en DLQ = "revisa esto".**

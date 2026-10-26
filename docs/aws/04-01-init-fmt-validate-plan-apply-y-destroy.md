@@ -1,32 +1,27 @@
 # Terraform: `init`, `fmt`, `validate`, `plan`, `apply` y `destroy`
 
-Terraform utiliza varios comandos para preparar, revisar y ejecutar una configuración.
-
-Cada comando cumple una responsabilidad diferente.
-
-Aprender su secuencia permite trabajar con más seguridad y diagnosticar errores sin improvisar.
-
-En esta lección recorrerás el ciclo completo de un proyecto.
-
-Prepararás el entorno, crearás recursos, modificarás su configuración y eliminarás el laboratorio.
-
-La plataforma de referencia será AWS.
-
-Los recursos se ejecutarán únicamente en S3 emulado mediante LocalStack.
-
 > **Curso de Terraform para AWS.**
 >
-> Los ejemplos utilizan credenciales ficticias y endpoints locales.
+> Todos los despliegues de esta página utilizan LocalStack.
+>
+> Utiliza únicamente credenciales ficticias y endpoints locales.
 >
 > No necesitas una cuenta real de AWS.
 >
-> Revisa siempre el plan antes de aplicar o destruir.
+> Una ejecución satisfactoria en LocalStack no equivale a una validación completa en AWS.
+
+Terraform utiliza varios comandos para preparar, revisar y ejecutar una configuración.
+Cada comando cumple una responsabilidad diferente.
+Aprender su secuencia permite trabajar con más seguridad y diagnosticar errores sin improvisar.
+
+En esta lección recorrerás el ciclo completo de un proyecto.
+Prepararás el entorno, crearás recursos, modificarás su configuración y eliminarás el laboratorio.
+La plataforma de referencia será AWS.
+Los recursos se ejecutarán únicamente en S3 emulado mediante LocalStack.
 
 ---
 
 ## 1. Objetivos de aprendizaje
-
-Esta lección combina conceptos operativos y sesiones de terminal.
 
 ### 1.1. Conocimientos principales
 
@@ -46,16 +41,12 @@ Al finalizar podrás:
 ### 1.2. Resultado práctico
 
 Crearás un bucket S3 y un objeto de texto.
-
 Modificarás etiquetas y contenido sin cambiar sus nombres.
-
 Después generarás un plan de destrucción y comprobarás la limpieza.
 
 ---
 
 ## 2. Requisitos previos
-
-Necesitas un equipo con las herramientas del curso instaladas.
 
 ### 2.1. Herramientas
 
@@ -79,46 +70,130 @@ El laboratorio utiliza:
 ### 2.2. Conocimientos recomendados
 
 Debes reconocer variables, recursos, locales y outputs.
-
 Los comandos de terminal utilizan una shell compatible con Bash.
-
 Terraform y AWS CLI se ejecutan en el host.
 
 ---
 
-## 3. Versiones y reproducibilidad
+## 3. Configuración del laboratorio (Ubuntu 24.04 + Docker + LocalStack)
 
-La reproducibilidad requiere controlar herramientas y dependencias.
+### 3.1. Arquitectura
 
-### 3.1. Decisiones del laboratorio
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Equipo Anfitrión (Ubuntu 24.04)         │
+│  ┌──────────────┐  ┌──────────────────┐                    │
+│  │   Terraform  │  │   aws_local()    │                    │
+│  │   (comandos) │  │  (verificación)  │                    │
+│  └──────┬───────┘  └────────┬─────────┘                    │
+│         │                   │                              │
+│         └───────────────────┼──────────────────────────────┘
+│                             ▼                              │
+│              http://127.0.0.1:4566                          │
+│                             │                              │
+│                             ▼                              │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │              Docker Container: LocalStack             │  │
+│  │  ┌────────────────────────────────────────────────┐   │  │
+│  │  │  Bucket S3 + Objeto para ciclo completo        │   │  │
+│  │  └────────────────────────────────────────────────┘   │  │
+│  └──────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+```
 
-La serie 5.x del proveedor AWS se utiliza como base didáctica.
+### 3.2. `compose.yaml`
 
-No representa una recomendación de versión más reciente.
+```yaml
+services:
+  localstack:
+    image: localstack/localstack:3.7.0
+    ports:
+      - "127.0.0.1:4566:4566"
+    environment:
+      SERVICES: s3,sts
+      AWS_DEFAULT_REGION: us-east-1
+      DEBUG: "1"
+    volumes:
+      - localstack_data:/var/lib/localstack
 
-El docente debe seleccionar una combinación concreta de Terraform, proveedor y LocalStack.
+volumes:
+  localstack_data:
+```
 
-### 3.2. Qué registrar
+### 3.3. `aws_local`
 
-Incluye en tu entrega:
+```bash
+aws_local() {
+  AWS_ACCESS_KEY_ID=test \
+  AWS_SECRET_ACCESS_KEY=test \
+  AWS_SESSION_TOKEN= \
+  AWS_CONFIG_FILE=/dev/null \
+  AWS_SHARED_CREDENTIALS_FILE=/dev/null \
+  AWS_EC2_METADATA_DISABLED=true \
+  aws \
+    --endpoint-url http://127.0.0.1:4566 \
+    --region us-east-1 \
+    --no-cli-pager \
+    "$@"
+}
+```
 
-- Versión de Terraform.
-- Versión seleccionada del proveedor.
-- Imagen o digest de LocalStack.
-- Versión de AWS CLI.
-- Sistema operativo.
+### 3.4. Configuración Terraform base
 
-### 3.3. Comprobación de compatibilidad
+```hcl
+# versions.tf
+terraform {
+  required_version = ">= 1.6.0, < 2.0.0"
+  required_providers {
+    aws = { source = "hashicorp/aws", version = "~> 5.0" }
+  }
+}
 
-Antes de distribuir la práctica, verifica creación, consulta, actualización y eliminación de S3.
+# providers.tf
+provider "aws" {
+  region = "us-east-1"
+  access_key = "test"
+  secret_key = "test"
+  skip_credentials_validation = true
+  skip_metadata_api_check     = true
+  skip_region_validation      = true
+  skip_requesting_account_id  = true
+  s3_use_path_style = true
+  endpoints { s3 = "http://127.0.0.1:4566", sts = "http://127.0.0.1:4566" }
+}
 
-Una configuración escrita no equivale a una combinación de versiones probada.
+# variables.tf
+variable "bucket_name" { type = string, default = "tf-ciclo-completo-001" }
+variable "object_key"  { type = string, default = "docs/archivo.txt" }
+variable "object_content" { type = string, default = "Contenido inicial" }
+
+# locals.tf
+locals {
+  tags = { Leccion = "CicloCompleto", Gestionado = "Terraform" }
+}
+
+# main.tf
+resource "aws_s3_bucket" "demo" {
+  bucket = var.bucket_name
+  tags = local.tags
+}
+
+resource "aws_s3_object" "demo" {
+  bucket = aws_s3_bucket.demo.bucket
+  key    = var.object_key
+  content = var.object_content
+  content_type = "text/plain"
+}
+
+# outputs.tf
+output "bucket_name" { value = aws_s3_bucket.demo.bucket }
+output "bucket_arn"  { value = aws_s3_bucket.demo.arn }
+output "object_etag" { value = aws_s3_object.demo.etag }
+```
 
 ---
 
 ## 4. Visión general del ciclo de trabajo
-
-Los comandos forman un flujo, pero no son intercambiables.
 
 ### 4.1. Responsabilidades
 
@@ -147,1269 +222,446 @@ Planificar destrucción → Revisar → Destruir
 
 ## 5. Configuración, estado y objetos remotos
 
-Terraform compara distintas fuentes de información.
+Terraform compara tres fuentes de información:
 
-### 5.1. Configuración
+| Fuente | Qué contiene | Quién la gestiona |
+|--------|--------------|-------------------|
+| **Configuración** (`.tf`) | Intención declarada | Tú (archivos) |
+| **Estado** (`terraform.tfstate`) | Relaciones y atributos registrados | Terraform |
+| **API remota** (LocalStack) | Objetos reales y sus propiedades | Proveedor (AWS/LocalStack) |
 
-Los archivos `.tf` describen el resultado deseado.
-
-Los archivos `.tfvars` proporcionan entradas.
-
-### 5.2. Estado
-
-El estado relaciona direcciones de Terraform con objetos gestionados.
-
-En este laboratorio se almacena localmente.
-
-### 5.3. Objetos remotos
-
-Los buckets y objetos existen dentro de LocalStack.
-
-No existen dentro del archivo de estado.
-
-### 5.4. Consecuencia práctica
-
-Borrar el estado no elimina los recursos.
-
-Apagar LocalStack tampoco constituye una destrucción gestionada por Terraform.
-
-Mantén separadas estas responsabilidades.
+Un plan calcula la diferencia entre **configuración** y **estado**, consultando la **API** para datos actuales.
+Un apply modifica la **API** y actualiza el **estado**.
+Un destroy elimina de la **API** y del **estado**.
 
 ---
 
-## 6. Preparación del directorio
+## 6. `terraform init` - Inicialización
 
-Trabaja en una carpeta exclusiva para esta lección.
+### 6.1. Qué hace
 
-### 6.1. Crear el proyecto
+- Crea el directorio `.terraform/`.
+- Descarga los proveedores declarados en `required_providers`.
+- Inicializa el backend (local por defecto).
+- Genera o actualiza `.terraform.lock.hcl`.
+
+### 6.2. Opciones útiles
 
 ```bash
-mkdir -p terraform-ciclo-localstack
-cd terraform-ciclo-localstack
+terraform init                    # Estándar
+terraform init -upgrade           # Reconsidera versiones dentro de restricciones
+terraform init -migrate-state     # Migra estado al nuevo backend
+terraform init -reconfigure       # Descarta configuración backend previa
 ```
 
-### 6.2. Estructura prevista
+### 6.3. Qué NO hace
 
-```text
-terraform-ciclo-localstack/
-├── compose.yaml
-├── .env
-├── .gitignore
-├── versions.tf
-├── providers.tf
-├── variables.tf
-├── terraform.tfvars
-├── locals.tf
-├── main.tf
-└── outputs.tf
-```
+- No crea recursos.
+- No valida la configuración (eso es `validate`).
+- No comprueba conectividad con LocalStack (solo descarga provider).
 
-Todos los comandos posteriores se ejecutan desde este directorio.
-
-No reutilices un estado de otra práctica.
-
----
-
-## 7. Control de archivos
-
-Algunos archivos deben conservarse y otros requieren protección.
-
-### 7.1. Archivo `.gitignore`
-
-```gitignore
-.terraform/
-*.tfstate
-*.tfstate.*
-*.tfplan
-crash.log
-.env
-descargas/
-```
-
-### 7.2. Qué versionar
-
-Versiona la configuración y los valores ficticios del laboratorio.
-
-Versiona también `.terraform.lock.hcl` en el proyecto raíz.
-
-### 7.3. Qué no publicar
-
-No publiques estados, planes guardados ni credenciales reales.
-
-Un plan puede contener valores sensibles aunque la terminal los oculte.
-
-La carpeta `.terraform/` se puede reconstruir mediante inicialización.
-
----
-
-## 8. Selección de la imagen de LocalStack
-
-La práctica debe utilizar una imagen conocida por el grupo.
-
-### 8.1. Valor proporcionado por el docente
-
-Sustituye el marcador por una referencia real validada:
+### 6.4. Práctica
 
 ```bash
-export LOCALSTACK_IMAGE='SUSTITUIR_POR_IMAGEN_VALIDADA'
-printf 'LOCALSTACK_IMAGE=%s\n' "$LOCALSTACK_IMAGE" > .env
-```
-
-No continúes manteniendo el marcador.
-
-Puede utilizarse una etiqueta fija o un digest.
-
-### 8.2. Evitar cambios inesperados
-
-No utilices una etiqueta flotante sin documentar sus consecuencias.
-
-Dos alumnos con imágenes diferentes pueden observar resultados distintos.
-
-### 8.3. Alcance
-
-Solo necesitaremos operaciones básicas de S3.
-
-No se requiere montar el socket de Docker para estos recursos.
-
----
-
-## 9. Configuración de Docker Compose
-
-Publicaremos el servicio únicamente en la interfaz local.
-
-### 9.1. Archivo `compose.yaml`
-
-```yaml
-services:
-  localstack:
-    image: ${LOCALSTACK_IMAGE:?Define LOCALSTACK_IMAGE en .env}
-    ports:
-      - "127.0.0.1:4566:4566"
-    environment:
-      SERVICES: s3
-      AWS_DEFAULT_REGION: us-east-1
-```
-
-### 9.2. Arranque
-
-```bash
+mkdir -p ciclo-completo/evidencias
+cd ciclo-completo
 docker compose up -d
-docker compose ps
-```
+source .env.localstack
 
-### 9.3. Diagnóstico inicial
-
-```bash
-docker compose logs --tail=100 localstack
-```
-
-Que un contenedor aparezca iniciado no garantiza que S3 esté listo.
-
-La siguiente sección comprobará el servicio.
-
----
-
-## 10. Credenciales y conectividad inicial
-
-AWS CLI utilizará valores ficticios en la terminal actual.
-
-### 10.1. Variables de entorno
-
-```bash
-export AWS_ACCESS_KEY_ID=test
-export AWS_SECRET_ACCESS_KEY=test
-export AWS_DEFAULT_REGION=us-east-1
-unset AWS_SESSION_TOKEN AWS_PROFILE AWS_DEFAULT_PROFILE
-```
-
-### 10.2. Comprobar S3
-
-```bash
-aws \
-  --endpoint-url=http://localhost:4566 \
-  --region us-east-1 \
-  s3api list-buckets
-```
-
-La respuesta puede contener una lista vacía.
-
-Espera y repite si el servicio todavía está arrancando.
-
-### 10.3. Condición para continuar
-
-No ejecutes el despliegue hasta recibir una respuesta válida.
-
-Una conexión fallida no es un error de sintaxis HCL.
-
----
-
-## 11. Restricciones de Terraform y proveedor
-
-Crea el archivo `versions.tf`.
-
-### 11.1. Configuración
-
-```hcl
-terraform {
-  required_version = ">= 1.6.0, < 2.0.0"
-
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
-}
-```
-
-### 11.2. Interpretación
-
-`required_version` limita las versiones de Terraform aceptadas.
-
-No instala Terraform.
-
-`required_providers` declara origen y compatibilidad del proveedor.
-
-### 11.3. Selección concreta
-
-La restricción permite versiones 5.x del proveedor.
-
-El archivo de bloqueo registra la selección concreta realizada durante `init`.
-
----
-
-## 12. Configuración del proveedor local
-
-Crea el archivo `providers.tf`.
-
-### 12.1. Configuración
-
-```hcl
-provider "aws" {
-  region     = "us-east-1"
-  access_key = "test"
-  secret_key = "test"
-
-  skip_credentials_validation = true
-  skip_metadata_api_check     = true
-  skip_requesting_account_id  = true
-
-  s3_use_path_style = true
-
-  endpoints {
-    s3 = "http://localhost:4566"
-  }
-}
-```
-
-### 12.2. Alcance del endpoint
-
-Solo S3 está redirigido mediante esta configuración.
-
-No añadas otros servicios sin revisar sus endpoints.
-
-La configuración del proveedor no configura un backend S3.
-
----
-
-## 13. Variables del laboratorio
-
-Crea el archivo `variables.tf`.
-
-### 13.1. Entradas
-
-```hcl
-variable "suffix" {
-  description = "Identificador ficticio del alumno."
-  type        = string
-  nullable    = false
-
-  validation {
-    condition     = can(regex("^[a-z0-9]{4,8}$", var.suffix))
-    error_message = "Usa entre 4 y 8 caracteres alfanuméricos."
-  }
-}
-
-variable "owner" {
-  description = "Responsable ficticio del laboratorio."
-  type        = string
-  default     = "formacion"
-}
-
-variable "document_content" {
-  description = "Texto del objeto README.txt."
-  type        = string
-  default     = "Primera versión del laboratorio."
-}
-```
-
-Las entradas controlan nombres, etiquetas y contenido.
-
----
-
-## 14. Valores, locales y recursos
-
-Crea los siguientes archivos.
-
-### 14.1. `terraform.tfvars`
-
-```hcl
-suffix           = "alumno01"
-owner            = "equipo-docente"
-document_content = "Primera versión del laboratorio."
-```
-
-### 14.2. `locals.tf`
-
-```hcl
-locals {
-  bucket_name = "curso-ciclo-dev-${var.suffix}"
-}
-```
-
-### 14.3. `main.tf`
-
-```hcl
-resource "aws_s3_bucket" "lab" {
-  bucket        = local.bucket_name
-  force_destroy = true
-  tags          = { Owner = var.owner, Laboratory = "LocalStack" }
-}
-
-resource "aws_s3_object" "readme" {
-  bucket       = aws_s3_bucket.lab.id
-  key          = "README.txt"
-  content      = var.document_content
-  content_type = "text/plain"
-}
-```
-
----
-
-## 15. Salidas y revisión inicial
-
-Crea el archivo `outputs.tf`.
-
-### 15.1. Resultados
-
-```hcl
-output "bucket_name" {
-  description = "Nombre del bucket del laboratorio."
-  value       = aws_s3_bucket.lab.bucket
-}
-
-output "object_key" {
-  description = "Clave del documento."
-  value       = aws_s3_object.readme.key
-}
-```
-
-### 15.2. Revisión por parejas
-
-Una persona identifica el endpoint.
-
-La otra comprueba credenciales y recursos.
-
-### 15.3. Advertencia de limpieza
-
-`force_destroy = true` permite eliminar contenido del bucket.
-
-Se utiliza únicamente para datos ficticios del laboratorio.
-
----
-
-## 16. Comando `terraform init`
-
-La inicialización prepara el directorio para trabajar con Terraform.
-
-### 16.1. Ejecución
-
-```bash
+# Crear archivos Terraform (sección 3.4)
 terraform init
+# Observar: descarga provider, crea .terraform.lock.hcl
 ```
-
-### 16.2. Qué prepara
-
-Según la configuración, puede:
-
-- Inicializar el backend.
-- Descargar módulos.
-- Instalar proveedores.
-- Crear o actualizar el archivo de bloqueo.
-
-### 16.3. Qué no hace
-
-No crea el bucket ni el objeto declarados.
-
-No sustituye la revisión del plan.
-
-### 16.4. Resultado esperado
-
-La salida debe indicar que el directorio se ha inicializado correctamente.
 
 ---
 
-## 17. Cuándo repetir `init`
+## 7. `terraform fmt` - Formateo
 
-La inicialización puede ejecutarse varias veces.
+### 7.1. Qué hace
 
-### 17.1. Situaciones habituales
+Reescribe archivos `.tf` para seguir el estilo canónico de Terraform:
+- Indentación (2 espacios).
+- Espaciado alrededor de `=`, `{`, `}`, `[`, `]`, `,`.
+- Ordenación de argumentos (opcional).
+- Saltos de línea consistentes.
 
-Repite `init` cuando:
-
-- Añadas módulos.
-- Cambies requisitos de proveedores.
-- Cambies la configuración del backend.
-- Reconstruyas el directorio de trabajo.
-
-### 17.2. Actualización deliberada
+### 7.2. Opciones
 
 ```bash
-terraform init -upgrade
+terraform fmt           # Modifica archivos in-place
+terraform fmt -check    # Solo verifica, exit code 0=ok, 1=cambios necesarios
+terraform fmt -diff     # Muestra diff sin modificar
+terraform fmt -recursive # Incluye submódulos
 ```
 
-Esta opción permite reconsiderar versiones dentro de las restricciones.
+### 7.3. Integración en CI
 
-No la utilices por costumbre antes de cada plan.
+```bash
+# En pipeline: falla si hay formato incorrecto
+terraform fmt -check -recursive
+```
 
-### 17.3. Backend
+### 7.4. Práctica
 
-`-reconfigure` y `-migrate-state` responden a necesidades distintas.
-
-No pruebes migraciones sobre el laboratorio sin preparar antes una copia y un procedimiento.
+```bash
+# Introducir formato inconsistente a propósito
+terraform fmt -check  # Debe fallar
+terraform fmt         # Corrige
+terraform fmt -check  # Debe pasar
+```
 
 ---
 
-## 18. Archivo de bloqueo de proveedores
+## 8. `terraform validate` - Validación estática
 
-El archivo de bloqueo ayuda a conservar selecciones reproducibles.
+### 8.1. Qué comprueba
 
-### 18.1. Archivo generado
+- Sintaxis HCL correcta.
+- Tipos de argumentos compatibles.
+- Referencias a recursos/variables existentes.
+- Argumentos requeridos presentes.
+- Validaciones de variables (`validation` block).
+- Ciclos de dependencia.
 
-```text
-.terraform.lock.hcl
-```
+### 8.2. Qué NO comprueba
 
-### 18.2. Información principal
+- Conectividad con LocalStack/AWS.
+- Existencia de recursos en la API.
+- Permisos IAM.
+- Cuotas o límites de servicio.
+- Valores que solo se conocen en apply.
 
-Incluye selecciones de versiones y comprobaciones de integridad de proveedores.
-
-No fija automáticamente las versiones de todos los módulos remotos.
-
-### 18.3. Comprobación
+### 8.3. Práctica
 
 ```bash
-terraform providers
+terraform validate  # Debe pasar
+
+# Introducir error: argumento inexistente en resource
+terraform validate  # Debe fallar con mensaje claro
+# Corregir
+terraform validate  # Debe pasar
 ```
-
-Consulta también la versión seleccionada en el archivo de bloqueo.
-
-### 18.4. Buena práctica
-
-Revisa los cambios del archivo durante actualizaciones.
-
-No lo elimines como solución inicial a cualquier error.
-
-Un cambio de proveedor merece pruebas del ciclo completo.
 
 ---
 
-## 19. Comando `terraform fmt`
+## 9. `terraform plan` - Planificación
 
-`fmt` aplica el formato canónico de Terraform.
+### 9.1. Qué hace
 
-### 19.1. Ejecución
+1. Refresca el estado consultando la API (refresh).
+2. Compara configuración vs estado actualizado.
+3. Calcula acciones necesarias.
+4. Muestra resumen y detalles.
+
+### 9.2. Símbolos del plan
+
+| Símbolo | Significado |
+|---------|-------------|
+| `+` | Crear recurso |
+| `~` | Actualizar in-place |
+| `-` | Destruir recurso |
+| `-/+` | Reemplazar (destruir + crear) |
+| `<=` | Leer (data source) |
+
+### 9.3. Opciones clave
 
 ```bash
-terraform fmt -recursive
+terraform plan                    # Plan interactivo
+terraform plan -out=archivo.tfplan # Guarda plan binario
+terraform plan -destroy           # Plan de destrucción
+terraform plan -var="x=y"         # Sobreescribe variable
+terraform plan -target=recurso    # Solo ese recurso (¡cuidado\!)
 ```
 
-### 19.2. Qué modifica
+### 9.4. Planes guardados (recomendado para apply)
 
-Puede ajustar:
+```bash
+terraform plan -out=creacion.tfplan
+terraform show creacion.tfplan    # Inspecciona plan guardado
+terraform apply creacion.tfplan   # Aplica SIN confirmación interactiva
+```
 
-- Indentación.
-- Espaciado.
-- Alineación.
-- Presentación de determinadas expresiones.
+> **Regla**: Siempre revisa el plan (`show`) antes de aplicar un plan guardado.
 
-### 19.3. Qué no comprueba
+### 9.5. Valores desconocidos
 
-No demuestra que un argumento exista en el proveedor.
+Algunos atributos aparecen como `(known after apply)`.
+No inventes su valor. Son determinados por la API tras la creación.
 
-No comprueba conectividad.
+### 9.6. Práctica
 
-No valida permisos remotos.
-
-### 19.4. Recomendación
-
-Ejecuta formato antes de revisar diferencias en Git.
+```bash
+terraform plan -out=creacion.tfplan
+terraform show creacion.tfplan
+# Identificar: + aws_s3_bucket.demo, + aws_s3_object.demo
+# Atributos conocidos vs unknown
+```
 
 ---
 
-## 20. Formato en modo comprobación
+## 10. `terraform apply` - Aplicación
 
-En una automatización puede ser preferible no modificar archivos.
-
-### 20.1. Comando
+### 10.1. Modos
 
 ```bash
-terraform fmt -check -diff -recursive
-```
-
-### 20.2. Interpretación
-
-`-check` devuelve un resultado no satisfactorio cuando el formato necesita cambios.
-
-`-diff` muestra las diferencias propuestas.
-
-### 20.3. Sesión breve
-
-Desalinea varios argumentos de `main.tf`.
-
-Ejecuta el modo comprobación.
-
-Después ejecuta `terraform fmt -recursive`.
-
-### 20.4. Entregable
-
-Guarda un ejemplo de diferencia y explica por qué el formato no equivale a validación.
-
----
-
-## 21. Comando `terraform validate`
-
-La validación comprueba la consistencia de la configuración.
-
-### 21.1. Ejecución
-
-```bash
-terraform validate
-```
-
-### 21.2. Qué puede detectar
-
-- Referencias incorrectas.
-- Argumentos no admitidos.
-- Tipos incompatibles.
-- Bloques mal utilizados.
-- Configuración estructuralmente inválida.
-
-### 21.3. Qué no garantiza
-
-No garantiza que LocalStack esté disponible.
-
-No confirma permisos ni disponibilidad de nombres remotos.
-
-### 21.4. Requisito práctico
-
-Inicializa antes para disponer de los esquemas de proveedores necesarios.
-
----
-
-## 22. Validación y entradas concretas
-
-Validar la configuración no sustituye un plan con valores reales.
-
-### 22.1. Distinción
-
-`validate` analiza la configuración reutilizable.
-
-`plan` evalúa una ejecución concreta con sus entradas y contexto.
-
-### 22.2. Prueba
-
-Introduce temporalmente:
-
-```hcl
-suffix = "ALUMNO"
-```
-
-Ejecuta:
-
-```bash
-terraform plan -input=false
-```
-
-La validación de la variable debe rechazar el valor.
-
-### 22.3. Restauración
-
-Devuelve el sufijo a `alumno01`.
-
-No continúes con una entrada inválida.
-
----
-
-## 23. Comando `terraform plan`
-
-El plan calcula acciones para aproximar la infraestructura a la configuración.
-
-### 23.1. Ejecución exploratoria
-
-```bash
-terraform plan -input=false
-```
-
-### 23.2. Qué utiliza
-
-Terraform considera:
-
-- Configuración.
-- Valores de entrada.
-- Estado existente.
-- Información obtenida mediante proveedores.
-
-### 23.3. Refresco habitual
-
-En un plan normal, Terraform suele leer los recursos existentes antes de calcular cambios.
-
-### 23.4. Qué no hace
-
-No ejecuta las acciones de creación, actualización o destrucción propuestas.
-
-Sí puede realizar consultas al servicio.
-
----
-
-## 24. Cómo leer las acciones del plan
-
-No te limites a la última línea.
-
-### 24.1. Símbolos habituales
-
-| **Símbolo** | **Significado** | **Revisión necesaria** |
-|-------------|-----------------|------------------------|
-| `+` | Crear | Identidad y argumentos |
-| `~` | Actualizar | Atributos modificados |
-| `-` | Destruir | Datos y dependencias |
-| `-/+` | Destruir y reemplazar | Riesgo de interrupción |
-| `+/-` | Crear reemplazo antes de destruir | Compatibilidad del recurso |
-| `<=` | Leer una fuente de datos | Información consultada |
-
-Los símbolos ayudan, pero no sustituyen el detalle.
-
-### 24.2. Plan inicial
-
-Con esta configuración debes observar dos recursos nuevos.
-
-Si aparece una destrucción, detente e investiga el estado utilizado.
-
----
-
-## 25. Guardar y revisar un plan
-
-Un plan guardado permite aplicar la propuesta concreta revisada.
-
-### 25.1. Generación
-
-```bash
-terraform plan -input=false -out=create.tfplan
-```
-
-### 25.2. Consulta
-
-```bash
-terraform show create.tfplan
-```
-
-### 25.3. Protección
-
-El archivo no es un documento de texto.
-
-Puede contener datos sensibles.
-
-No lo publiques en Git.
-
-### 25.4. Límites
-
-Un plan guardado no impide que el entorno remoto cambie.
-
-Si el estado cambia, Terraform puede rechazarlo como obsoleto.
-
----
-
-## 26. Códigos de salida de `plan`
-
-La opción detallada permite distinguir cambios de errores.
-
-### 26.1. Comando
-
-```bash
-terraform plan -input=false -detailed-exitcode
-PLAN_EXIT=$?
-printf 'Código: %s\n' "$PLAN_EXIT"
-```
-
-Este ejemplo presupone que la shell no está terminando automáticamente ante códigos no nulos.
-
-### 26.2. Interpretación
-
-- `0`: ejecución correcta sin diferencias.
-- `1`: error.
-- `2`: ejecución correcta con diferencias.
-
-### 26.3. Advertencia
-
-El código `2` no debe tratarse como un error de Terraform.
-
-En scripts con `set -e`, captura el resultado dentro de una condición.
-
----
-
-## 27. Comando `terraform apply`
-
-La aplicación ejecuta las acciones necesarias.
-
-### 27.1. Sin plan guardado
-
-```bash
+# Interactivo: muestra plan y pide confirmación
 terraform apply
+
+# Desde plan guardado: NO pide confirmación (ya revisaste)
+terraform apply creacion.tfplan
+
+# Con variables
+terraform apply -var="bucket_name=otro-bucket"
 ```
 
-Terraform genera un plan y solicita confirmación.
+### 10.2. Confirmación interactiva
 
-Revisa el contenido antes de escribir `yes`.
+Escribe exactamente `yes` (o lo que pida tu versión) para confirmar.
+No uses `-auto-approve` en prácticas de aprendizaje.
 
-### 27.2. Con plan guardado
+### 10.3. Qué ocurre durante apply
 
-```bash
-terraform apply create.tfplan
-```
+1. Bloquea el estado (local: archivo `.terraform.tfstate.lock.info`).
+2. Ejecuta acciones en orden de dependencias.
+3. Actualiza estado tras cada recurso.
+4. Libera bloqueo.
+5. Muestra outputs.
 
-Terraform aplica ese plan sin otra aprobación interactiva.
-
-### 27.3. Valores de entrada
-
-No utilices `-var` o `-var-file` para modificar un plan guardado durante su aplicación.
-
-Genera un nuevo plan si cambian las entradas.
-
----
-
-## 28. Aplicación y fallos parciales
-
-Terraform no ofrece una transacción global con reversión automática.
-
-### 28.1. Ejemplo de situación
-
-El bucket puede crearse y el objeto puede fallar.
-
-La aplicación termina con error, pero el bucket existe.
-
-### 28.2. Qué hacer
-
-1. Lee el primer error.
-2. Consulta el estado.
-3. Verifica LocalStack.
-4. Corrige la causa.
-5. Genera otro plan.
-
-### 28.3. Qué evitar
-
-No repitas `apply` sin comprender el fallo.
-
-No borres el estado para “empezar limpio”.
-
-Podrías perder el seguimiento de recursos ya creados.
-
----
-
-## 29. Sesión práctica 1: creación completa
-
-Duración orientativa: 25 minutos.
-
-### 29.1. Secuencia
+### 10.4. Práctica
 
 ```bash
-terraform init
-terraform fmt -recursive
-terraform validate
-terraform plan -input=false -out=create.tfplan
-terraform show create.tfplan
-terraform apply create.tfplan
-```
-
-### 29.2. Resultado esperado
-
-La aplicación debe crear dos recursos.
-
-Un bucket y un objeto.
-
-### 29.3. Consultar outputs
-
-```bash
+terraform apply creacion.tfplan
+# Verificar outputs
 terraform output
+
+# Verificar con aws_local (independiente)
+aws_local s3api head-bucket --bucket tf-ciclo-completo-001
+aws_local s3api head-object --bucket tf-ciclo-completo-001 --key docs/archivo.txt
+aws_local s3api get-object --bucket tf-ciclo-completo-001 --key docs/archivo.txt /tmp/verificado.txt
+diff <(echo -n "Contenido inicial") /tmp/verificado.txt
 ```
-
-### 29.4. Entregable
-
-Registra la función de cada comando y las acciones revisadas.
 
 ---
 
-## 30. Sesión práctica 2: verificación independiente
+## 11. Modificación y convergencia
 
-Verifica el servicio mediante AWS CLI.
-
-### 30.1. Recuperar nombre
-
-```bash
-BUCKET="$(terraform output -raw bucket_name)"
-mkdir -p descargas
-```
-
-### 30.2. Consultar y descargar
-
-```bash
-aws --endpoint-url=http://localhost:4566 --region us-east-1 \
-  s3api head-bucket --bucket "$BUCKET"
-
-aws --endpoint-url=http://localhost:4566 --region us-east-1 \
-  s3 cp "s3://${BUCKET}/README.txt" descargas/README.txt
-```
-
-### 30.3. Leer
-
-```bash
-cat descargas/README.txt
-```
-
-Un output registrado no sustituye esta comprobación remota.
-
----
-
-## 31. Sesión práctica 3: comprobar convergencia
-
-Después de aplicar, un nuevo plan debería reflejar estabilidad.
-
-### 31.1. Comando
-
-```bash
-terraform plan -input=false
-```
-
-### 31.2. Resultado esperado
-
-Sin cambios externos ni de configuración, Terraform debe indicar que no hay acciones pendientes.
-
-### 31.3. Si aparecen cambios
-
-Revisa:
-
-- Archivos modificados.
-- Variables de entorno.
-- Recursos alterados externamente.
-- Comportamiento del proveedor.
-- Persistencia de LocalStack.
-
-### 31.4. Entregable
-
-Explica por qué repetir un plan no debería crear otro bucket idéntico.
-
----
-
-## 32. Sesión práctica 4: actualización controlada
-
-Cambia contenido y una etiqueta sin modificar nombres.
-
-### 32.1. Nuevos valores
-
-En `terraform.tfvars`:
+### 11.1. Cambiar configuración
 
 ```hcl
-suffix           = "alumno01"
-owner            = "nuevo-equipo"
-document_content = "Segunda versión del laboratorio."
+# En main.tf, modificar tags del bucket:
+tags = merge(local.tags, { Modificado = "true", Version = "2" })
+
+# En variables.tf o -var:
+# object_content = "Contenido modificado"
 ```
 
-### 32.2. Plan y aplicación
-
-```bash
-terraform plan -input=false -out=update.tfplan
-terraform show update.tfplan
-terraform apply update.tfplan
-```
-
-### 32.3. Verificación
-
-Descarga otra vez el documento y consulta las etiquetas.
-
-### 32.4. Entregable
-
-Identifica qué cambió en cada recurso y confirma que el bucket conserva su nombre.
-
----
-
-## 33. Sesión práctica 5: observar un reemplazo
-
-Algunos atributos no pueden modificarse en el mismo objeto remoto.
-
-### 33.1. Cambio temporal
-
-Modifica el sufijo:
-
-```hcl
-suffix = "alumno02"
-```
-
-### 33.2. Observación
-
-```bash
-terraform plan -input=false
-```
-
-El nombre del bucket cambia.
-
-El proveedor debe planificar su reemplazo.
-
-El objeto también necesita una relación válida con el nuevo bucket.
-
-### 33.3. No aplicar
-
-Restaura `alumno01`.
-
-Genera otro plan y comprueba que desaparece el reemplazo.
-
----
-
-## 34. Sesión práctica 6: detectar un error de configuración
-
-Esta práctica distingue formato y validación.
-
-### 34.1. Cambio incorrecto
-
-Añade temporalmente dentro del bucket:
-
-```hcl
-nombre = "argumento-no-admitido"
-```
-
-### 34.2. Comprobaciones
+### 11.2. Ciclo de cambio
 
 ```bash
 terraform fmt
 terraform validate
+terraform plan -out=modificacion.tfplan
+terraform show modificacion.tfplan
+# Revisar: ~ tags, ~ content
+terraform apply modificacion.tfplan
 ```
 
-El formato puede completarse.
+### 11.3. Convergencia
 
-La validación debe rechazar el argumento.
+```bash
+terraform plan
+# "No changes. Infrastructure is up-to-date."
+# Significa: configuración == estado == API (dentro del alcance evaluado)
+```
 
-### 34.3. Restauración
+### 11.4. Verificación independiente
 
-Elimina el argumento incorrecto y repite la validación.
-
-### 34.4. Entregable
-
-Explica por qué un archivo formateado puede seguir siendo inválido.
+```bash
+aws_local s3api get-bucket-tagging --bucket tf-ciclo-completo-001
+aws_local s3api get-object --bucket tf-ciclo-completo-001 --key docs/archivo.txt /tmp/v2.txt
+cat /tmp/v2.txt
+```
 
 ---
 
-## 35. Sesión práctica 7: detectar conectividad fallida
+## 12. `terraform destroy` - Destrucción
 
-Esta práctica no modifica la configuración.
-
-### 35.1. Detener temporalmente
+### 12.1. Plan de destrucción
 
 ```bash
-docker compose stop localstack
-```
-
-### 35.2. Comparar
-
-```bash
-terraform validate
-terraform plan -input=false
-```
-
-La validación puede terminar correctamente.
-
-El plan puede fallar al intentar consultar los recursos existentes.
-
-### 35.3. Recuperar servicio
-
-```bash
-docker compose start localstack
-```
-
-Comprueba S3 antes de continuar.
-
-No presupongas que todos los modos de arranque conservan recursos.
-
----
-
-## 36. Deriva y refresco
-
-La deriva es una diferencia causada fuera de la configuración gestionada.
-
-### 36.1. Ejemplo
-
-Una persona modifica una etiqueta mediante AWS CLI.
-
-La configuración de Terraform conserva el valor anterior.
-
-### 36.2. Plan normal
-
-Un plan normal puede detectar la diferencia y proponer restaurar el valor declarado.
-
-### 36.3. Refresco exclusivo
-
-```bash
-terraform plan -refresh-only
-```
-
-Este modo propone actualizar la visión del estado.
-
-No propone restaurar los recursos conforme a la configuración.
-
-### 36.4. Precaución
-
-Revisa el objetivo antes de elegir el modo.
-
-Refrescar estado y corregir deriva no son la misma operación.
-
----
-
-## 37. Opciones que requieren criterio
-
-Algunas opciones reducen protecciones o cambian el alcance habitual.
-
-### 37.1. Aprobación automática
-
-```bash
-terraform apply -auto-approve
-```
-
-Elimina la confirmación interactiva.
-
-No elimina el riesgo de las acciones.
-
-### 37.2. Alcance parcial
-
-`-target` es una herramienta para situaciones excepcionales.
-
-No debe convertirse en la forma habitual de desplegar una parte del proyecto.
-
-### 37.3. Sin refresco
-
-`-refresh=false` puede calcular cambios con información desactualizada.
-
-### 37.4. Regla
-
-No añadas opciones para evitar entender un error o una diferencia.
-
----
-
-## 38. Bloqueo del estado e interrupciones
-
-El bloqueo ayuda a evitar escrituras concurrentes.
-
-### 38.1. Buenas prácticas
-
-No ejecutes dos aplicaciones simultáneas sobre el mismo estado.
-
-No utilices `-lock=false` como solución habitual.
-
-### 38.2. Espera de bloqueo
-
-Cuando el backend lo permite, puedes ajustar la espera:
-
-```bash
-terraform apply -lock-timeout=60s
-```
-
-### 38.3. Interrupción
-
-Terraform intenta detenerse de forma ordenada ante una interrupción.
-
-Un cierre forzado puede dejar acciones incompletas.
-
-### 38.4. Recuperación
-
-Verifica procesos activos, estado y recursos antes de continuar.
-
----
-
-## 39. Comando `terraform destroy`
-
-La destrucción elimina los recursos gestionados por el estado actual.
-
-### 39.1. Ejecución interactiva
-
-```bash
-terraform destroy
-```
-
-Terraform presenta un plan de destrucción y solicita confirmación.
-
-### 39.2. Alcance
-
-No elimina automáticamente todos los recursos del emulador.
-
-Elimina los objetos gestionados que forman parte de la operación.
-
-### 39.3. Advertencia
-
-La destrucción puede borrar datos.
-
-En este laboratorio los datos son ficticios.
-
-### 39.4. Condición
-
-LocalStack debe seguir disponible para procesar las llamadas de eliminación.
-
----
-
-## 40. Plan de destrucción guardado
-
-Una revisión separada también es útil para eliminar recursos.
-
-### 40.1. Generación
-
-```bash
-terraform plan -destroy -input=false -out=destroy.tfplan
-```
-
-### 40.2. Revisión
-
-```bash
+terraform plan -destroy -out=destroy.tfplan
 terraform show destroy.tfplan
+# Verificar: - aws_s3_object.demo, - aws_s3_bucket.demo
 ```
 
-### 40.3. Aplicación
+### 12.2. Aplicar destrucción
 
 ```bash
 terraform apply destroy.tfplan
+# O interactivo: terraform destroy
 ```
 
-### 40.4. Resultado esperado
-
-Deben eliminarse el objeto y el bucket.
-
-La dependencia permite ordenar las acciones adecuadamente.
-
-Un plan guardado de destrucción tampoco solicita otra confirmación interactiva.
-
----
-
-## 41. Verificación de limpieza
-
-Comprueba la eliminación antes de apagar el emulador.
-
-### 41.1. Consulta local
+### 12.3. Verificación de limpieza
 
 ```bash
-aws \
-  --endpoint-url=http://localhost:4566 \
-  --region us-east-1 \
-  s3api list-buckets
+# Estado Terraform
+terraform state list  # Vacío
+
+# API LocalStack
+aws_local s3api list-buckets  # Vacío
+aws_local s3api list-objects-v2 --bucket tf-ciclo-completo-001 2>&1 | head -3
+# Debe dar error NoSuchBucket
 ```
 
-### 41.2. Estado
-
-```bash
-terraform state list
-```
-
-No deberían aparecer los dos recursos destruidos.
-
-### 41.3. Plan posterior
-
-Un plan normal volverá a proponer creación porque la configuración sigue declarando los recursos.
-
-Esto es esperado.
-
-### 41.4. Finalizar
+### 12.4. Detener LocalStack
 
 ```bash
 docker compose down
-rm -f create.tfplan update.tfplan destroy.tfplan
 ```
 
 ---
 
-## 42. Diferencias respecto a AWS real
+## 13. Archivos de estado y bloqueo
 
-El ciclo de comandos es transferible, pero el entorno no es equivalente.
+### 13.1. `terraform.tfstate`
 
-### 42.1. Aspectos transferibles
+- JSON con recursos gestionados, atributos, dependencias.
+- **Sensible**: puede contener secretos.
+- No editar manualmente (salvo operaciones avanzadas módulo 07).
+- Backend local = archivo en disco. Backend remoto = S3 + DynamoDB (módulo 07).
 
-- Inicialización.
-- Formato.
-- Validación.
-- Lectura de planes.
-- Gestión del estado.
-- Aplicación y destrucción.
+### 13.2. `.terraform.lock.hcl`
 
-### 42.2. Aspectos que cambian
+- Versiones exactas de proveedores seleccionadas.
+- Hashes de integridad.
+- **Debe versionarse en Git**.
 
-Debes revisar credenciales, IAM, costes, límites y disponibilidad.
+### 13.3. `.terraform/`
 
-Las opciones `skip_*` pertenecen a la configuración local.
-
-### 42.3. Persistencia
-
-Si LocalStack pierde recursos, el estado puede conservar sus referencias.
-
-### 42.4. Producción
-
-Una prueba local no demuestra seguridad ni compatibilidad completa de una arquitectura real.
+- Directorio con plugins de proveedores descargados.
+- **No versionar** (en `.gitignore`).
 
 ---
 
-## 43. Evaluación y ejercicios
+## 14. Sesiones guiadas para el alumnado
 
-La evaluación debe comprobar comprensión, no solo ejecución de comandos.
+### 14.1. Sesión 1: Init, fmt, validate, plan (30 min)
 
-### 43.1. Ejercicios
+1. Crear configuración base
+2. `init` → observar `.terraform/` y `.terraform.lock.hcl`
+3. `fmt -check` → `fmt` → `validate`
+4. `plan -out=creacion.tfplan` → `show` → analizar símbolos
+5. **Entrega**: Plan analizado + explicación de cada símbolo
 
-1. Explica por qué `init` no crea el bucket.
-2. Provoca un cambio de formato y corrígelo.
-3. Provoca un argumento inválido y diagnostícalo.
-4. Guarda un plan y describe sus acciones.
-5. Actualiza el contenido del objeto.
-6. Observa un reemplazo sin aplicarlo.
-7. Destruye y verifica la limpieza.
+### 14.2. Sesión 2: Apply, verificación, modificación (35 min)
 
-### 43.2. Evidencias
+1. `apply creacion.tfplan`
+2. Verificar con `terraform output` + `aws_local` (dual)
+3. Modificar tags y contenido → `plan` → `apply`
+4. Verificar convergencia (`plan` sin cambios)
+5. **Entrega**: Evidencias verificación dual + plan modificación + convergencia
 
-Entrega configuración, versiones y registro de resultados.
+### 14.3. Sesión 3: Destroy y limpieza (20 min)
 
-### 43.3. Criterio principal
-
-Debes poder justificar por qué ejecutas cada comando.
-
-No entregues estados ni planes guardados.
+1. `plan -destroy` → `show` → `apply`
+2. Verificar: `state list` vacío + `aws_local list-buckets` vacío
+3. `docker compose down`
+4. **Entrega**: Evidencias limpieza completa + explicación orden de operaciones
 
 ---
 
-## 44. Resumen y lista final
+## 15. Ejercicios de refuerzo
 
-El ciclo de Terraform separa preparación, revisión y ejecución.
+### 15.1. Ejercicio de identificación
 
-### 44.1. Antes de aplicar
+Relaciona cada comando con su responsabilidad:
 
-Comprueba directorio, estado, endpoint, credenciales y entradas.
+| Comando | Responsabilidad |
+|---------|-----------------|
+| `init` | |
+| `fmt` | |
+| `validate` | |
+| `plan` | |
+| `apply` | |
+| `destroy` | |
 
-Ejecuta formato y validación.
+### 15.2. Ejercicio de interpretación
 
-Genera y revisa el plan.
+¿Qué pasa si:
+1. Ejecutas `apply` sin `init` previo?
+2. Ejecutas `plan` tras `apply` exitoso?
+3. Modificas un archivo `.tf` y ejecutas `apply` sin `plan`?
+4. Ejecutas `destroy` con LocalStack detenido?
 
-### 44.2. Después de aplicar
+### 15.3. Ejercicio con asistente de IA
 
-Consulta outputs y verifica el servicio.
+```text
+Instrucción:
+Explica la diferencia entre `terraform plan` y `terraform plan -out=archivo.tfplan`.
+¿Por qué se recomienda usar planes guardados para `apply`?
+Incluye: revisión, confirmación, reproducibilidad, seguridad.
+```
 
-Genera otro plan para comprobar estabilidad.
+---
 
-### 44.3. Antes de destruir
+## 16. Limitaciones de LocalStack en el ciclo
 
-Comprueba el alcance y los datos que se eliminarán.
+| Comando | LocalStack | AWS Real |
+|---------|------------|----------|
+| `init` | ✅ Idéntico | ✅ |
+| `fmt` | ✅ Idéntico | ✅ |
+| `validate` | ✅ Idéntico | ✅ |
+| `plan` | ✅ (consulta API local) | ✅ (consulta API real) |
+| `apply` | ✅ (latencia sub-ms) | ✅ (latencia ms, throttling) |
+| `destroy` | ✅ | ✅ |
+| Estado local | ✅ Archivo | ✅ Archivo o S3+DynamoDB |
+| Bloqueo estado | ✅ Archivo local | ✅ DynamoDB (backend remoto) |
 
-Mantén el servicio remoto disponible.
+---
 
-### 44.4. Idea final
+## 17. Diagnóstico de errores frecuentes
 
-Trabajar con Terraform no consiste en ejecutar comandos de memoria.
+| Error | Comando | Causa | Solución |
+|-------|---------|-------|----------|
+| `Provider not initialized` | `plan`/`apply` | Falta `init` | `terraform init` |
+| `Configuration validation failed` | `validate` | Error sintaxis/tipos | Leer mensaje, corregir `.tf` |
+| `Error acquiring state lock` | `apply`/`destroy` | Proceso previo colgado | Eliminar `.terraform.tfstate.lock.info` |
+| `Resource already exists` | `apply` | Recurso en API no en estado | `import` o limpiar API |
+| `Provider produced inconsistent result` | `apply` | Bug provider / eventualidad | Reintentar, revisar versión provider |
 
-Consiste en comprender qué información utiliza cada operación, qué cambios propone y qué evidencia confirma su resultado.
+---
+
+## 18. Evaluación y cierre
+
+### 18.1. Rúbrica (0-2 puntos)
+
+| Criterio | 0 pts | 1 pt | 2 pts |
+|----------|-------|------|-------|
+| Init | No ejecuta | Ejecuta sin entender | Ejecuta + explica lock file + backend |
+| Fmt/Validate | No usa | Usa básico | Usa + integra en CI + corrige errores |
+| Plan | No revisa | Revisa superficial | Analiza símbolos, unknowns, dependencias |
+| Apply | Sin plan guardado | Interactivo | Plan guardado + show + apply + verificación dual |
+| Destroy | No verifica | Solo `destroy` | Plan destroy + show + apply + verificación API |
+| Estado | No conoce | Conoce archivo | Explica estado vs config vs API + lock file |
+
+### 18.2. Checklist final
+
+- [ ] `terraform init` ejecutado y `.terraform.lock.hcl` creado
+- [ ] `terraform fmt -check` pasa
+- [ ] `terraform validate` pasa
+- [ ] `terraform plan -out=creacion.tfplan` revisado con `show`
+- [ ] `terraform apply creacion.tfplan` ejecutado
+- [ ] Verificación dual: `terraform output` + `aws_local`
+- [ ] Modificación → `plan` → `apply` → convergencia verificada
+- [ ] `terraform plan -destroy -out=destroy.tfplan` revisado
+- [ ] `terraform apply destroy.tfplan` ejecutado
+- [ ] `terraform state list` vacío
+- [ ] `aws_local s3api list-buckets` vacío
+- [ ] `docker compose down`
+
+### 18.3. Idea principal
+
+> **El ciclo no es lineal: es un bucle de retroalimentación.**
+> `plan` te dice QUÉ pasará. `apply` lo EJECUTA. `aws_local` CONFIRMA la realidad.
+> **Nunca apliques sin revisar el plan. Nunca des por hecho sin verificar en la API.**
+> **El estado es la memoria de Terraform; cuídalo, versiona el lock, no lo edites a mano.**

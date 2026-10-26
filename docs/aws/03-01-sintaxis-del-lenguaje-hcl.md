@@ -1,28 +1,26 @@
 # Sintaxis del lenguaje HCL en Terraform
 
-HCL es el lenguaje que utilizamos para escribir configuraciones de Terraform.
+> **Curso de Terraform para AWS.**
+>
+> Todos los despliegues de esta página utilizan LocalStack.
+>
+> Utiliza únicamente credenciales ficticias y endpoints locales.
+>
+> No necesitas una cuenta real de AWS.
+>
+> Una ejecución satisfactoria en LocalStack no equivale a una validación completa en AWS.
 
+HCL (HashiCorp Configuration Language) es el lenguaje que utilizamos para escribir configuraciones de Terraform.
 En esta lección aprenderás a leerlo, escribirlo y comprobarlo mediante prácticas progresivas.
-
 Los ejemplos utilizan el proveedor AWS y ejecutan los despliegues en LocalStack.
-
 La infraestructura de práctica se limita a buckets y objetos S3.
-
 Esto permite concentrarse en el lenguaje sin introducir redes, máquinas virtuales o funciones Lambda.
-
-> **Entorno del curso:** Terraform para AWS con ejemplos locales en LocalStack.
->
-> Las credenciales del laboratorio son ficticias.
->
-> Los comandos de despliegue no deben apuntar a una cuenta real de AWS.
 
 ---
 
-## 1. Objetivos
+## 1. Objetivos de aprendizaje
 
-Esta lección combina explicación del lenguaje, comprobaciones locales y despliegues sencillos.
-
-### 1.1. Objetivos de aprendizaje
+### 1.1. Objetivos conceptuales
 
 Al finalizar podrás:
 
@@ -43,36 +41,18 @@ Al finalizar podrás:
 - Verificar recursos en LocalStack.
 - Eliminar los recursos del laboratorio.
 
-### 1.2. Resultado práctico
+### 1.2. Objetivos prácticos
 
-Construirás:
+También podrás:
 
-1. Un bucket S3.
-2. Un archivo de texto almacenado como objeto.
-3. Etiquetas calculadas mediante expresiones.
-4. Salidas con información de los recursos.
-5. Una ampliación con varios buckets.
-
-### 1.3. Alcance
-
-Esta página introduce la sintaxis y su uso en Terraform.
-
-No desarrolla en profundidad:
-
-- Backends remotos.
-- Módulos publicados.
-- IAM.
-- Redes de AWS.
-- Pipelines.
-- Migraciones de estado.
-
-Estos temas se trabajan en otras lecciones.
+- Escribir configuraciones HCL válidas.
+- Usar `terraform console` para experimentar.
+- Depurar errores de sintaxis.
+- Aplicar buenas prácticas de formato.
 
 ---
 
 ## 2. Requisitos previos
-
-Necesitas un entorno local preparado y acceso a una terminal.
 
 ### 2.1. Herramientas
 
@@ -94,7 +74,6 @@ Las prácticas utilizan:
 - Una versión de LocalStack compatible con las operaciones S3 utilizadas.
 
 No necesitas una cuenta de AWS.
-
 No necesitas credenciales reales.
 
 ### 2.2. Convención de versiones
@@ -106,16 +85,14 @@ version = "~> 5.0"
 ```
 
 Esto permite versiones 5.x, pero no 6.x.
-
 El archivo `.terraform.lock.hcl` registra la selección concreta.
-
 Para un curso reproducible, todos los alumnos deberían utilizar una selección revisada por el docente.
 
 ### 2.3. Materiales
 
 Prepara:
 
-- Un editor con soporte para HCL.
+- Un editor con soporte para HCL (VS Code con extensión Terraform recomendado).
 - Una terminal.
 - Una carpeta nueva.
 - Un documento para registrar resultados.
@@ -123,1718 +100,748 @@ Prepara:
 ### 2.4. Advertencia
 
 No mezcles este laboratorio con un proyecto de producción.
-
 El estado local puede contener información sensible en otros escenarios.
-
 En esta práctica solo utilizaremos datos ficticios.
 
 ---
 
-## 3. Qué es HCL
+## 3. Configuración del laboratorio (Ubuntu 24.04 + Docker + LocalStack)
+
+### 3.1. Arquitectura
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Equipo Anfitrión (Ubuntu 24.04)         │
+│  ┌──────────────┐  ┌──────────────────┐                    │
+│  │   Terraform  │  │   aws_local()    │                    │
+│  │   (HCL)      │  │  (verificación)  │                    │
+│  └──────┬───────┘  └────────┬─────────┘                    │
+│         │                   │                              │
+│         └───────────────────┼──────────────────────────────┘
+│                             ▼                              │
+│              http://127.0.0.1:4566                          │
+│                             │                              │
+│                             ▼                              │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │              Docker Container: LocalStack             │  │
+│  │  ┌────────────────────────────────────────────────┐   │  │
+│  │  │  Buckets y objetos S3 para practicar HCL       │   │  │
+│  │  └────────────────────────────────────────────────┘   │  │
+│  └──────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 3.2. `compose.yaml`
+
+```yaml
+services:
+  localstack:
+    image: localstack/localstack:3.7.0
+    ports:
+      - "127.0.0.1:4566:4566"
+    environment:
+      SERVICES: s3,sts
+      AWS_DEFAULT_REGION: us-east-1
+      DEBUG: "1"
+    volumes:
+      - localstack_data:/var/lib/localstack
+
+volumes:
+  localstack_data:
+```
+
+### 3.3. `aws_local`
+
+```bash
+aws_local() {
+  AWS_ACCESS_KEY_ID=test \
+  AWS_SECRET_ACCESS_KEY=test \
+  AWS_SESSION_TOKEN= \
+  AWS_CONFIG_FILE=/dev/null \
+  AWS_SHARED_CREDENTIALS_FILE=/dev/null \
+  AWS_EC2_METADATA_DISABLED=true \
+  aws \
+    --endpoint-url http://127.0.0.1:4566 \
+    --region us-east-1 \
+    --no-cli-pager \
+    "$@"
+}
+```
+
+### 3.3. Configuración base Terraform
+
+```hcl
+# versions.tf
+terraform {
+  required_version = ">= 1.6.0, < 2.0.0"
+  required_providers {
+    aws = { source = "hashicorp/aws", version = "~> 5.0" }
+  }
+}
+
+# providers.tf
+provider "aws" {
+  region = "us-east-1"
+  access_key = "test"
+  secret_key = "test"
+  skip_credentials_validation = true
+  skip_metadata_api_check     = true
+  skip_region_validation      = true
+  skip_requesting_account_id  = true
+  s3_use_path_style = true
+  endpoints { s3 = "http://127.0.0.1:4566", sts = "http://127.0.0.1:4566" }
+}
+```
+
+---
+
+## 4. Qué es HCL
 
 HCL significa **HashiCorp Configuration Language**.
 
-### 3.1. HCL y Terraform
+### 4.1. HCL y Terraform
 
 HCL ofrece una sintaxis para expresar configuraciones.
-
 Terraform interpreta esa sintaxis con sus propias reglas.
-
 Por ejemplo, Terraform define el significado de:
 
-- `resource`.
-- `variable`.
-- `locals`.
-- `output`.
-- `terraform`.
-- `provider`.
+- `resource`
+- `variable`
+- `locals`
+- `output`
+- `terraform`
+- `provider`
 
-HCL no implica que cualquier bloque sea válido para Terraform.
+### 4.2. Dos sintaxis: nativa y JSON
 
-### 3.2. Enfoque declarativo
+HCL tiene una sintaxis nativa (`.tf`) y una equivalente en JSON (`.tf.json`).
+La nativa es más legible para humanos.
+La JSON es más fácil de generar programáticamente.
+En este curso usamos la sintaxis nativa.
 
-Una configuración describe el resultado deseado.
+### 4.3. Codificación y finales de línea
 
-Ejemplo:
-
-```hcl
-resource "aws_s3_bucket" "principal" {
-  bucket = "curso-hcl-dev-demo01"
-}
-```
-
-El bloque declara un bucket gestionado por Terraform.
-
-No describe una secuencia de llamadas manuales.
-
-Terraform calcula qué acciones necesita realizar.
-
-### 3.3. Sintaxis y significado
-
-Distingue dos niveles:
-
-- **Sintaxis:** cómo se escribe una expresión o bloque.
-- **Semántica:** si ese elemento tiene sentido en la configuración.
-
-Un archivo puede tener sintaxis correcta y utilizar un argumento inexistente.
-
-También puede validar y fallar durante el despliegue.
-
-### 3.4. Archivos
-
-Los archivos habituales terminan en:
-
-```text
-.tf
-```
-
-Terraform también admite su representación JSON:
-
-```text
-.tf.json
-```
-
-En esta lección utilizaremos la sintaxis nativa.
+Los archivos HCL usan codificación UTF-8.
+Los finales de línea pueden ser LF (Unix) o CRLF (Windows).
+Terraform acepta ambos.
+Se recomienda LF y un salto de línea final en el archivo.
 
 ---
 
-## 4. Argumentos y bloques
+## 5. Estructura básica: bloques y argumentos
 
-Estos son los elementos básicos que encontrarás en una configuración.
+### 5.1. Bloques
 
-### 4.1. Argumentos
-
-Un argumento asigna una expresión a un nombre:
+Un bloque es un contenedor con un tipo, cero o más etiquetas y un cuerpo entre llaves.
 
 ```hcl
-nombre = expresion
-```
-
-Ejemplos:
-
-```hcl
-bucket        = "curso-hcl-dev-demo01"
-force_destroy = true
-```
-
-El signo `=` indica asignación de configuración.
-
-No debe confundirse con el operador de comparación `==`.
-
-### 4.2. Bloques
-
-Un bloque agrupa contenido:
-
-```hcl
-tipo "etiqueta" {
-  argumento = "valor"
+tipo_bloque "etiqueta1" "etiqueta2" {
+  # cuerpo: argumentos y bloques anidados
+  argumento = valor
 }
 ```
 
-Las llaves delimitan el cuerpo.
-
-El número de etiquetas depende del tipo de bloque.
-
-### 4.3. Ejemplo de recurso
+Ejemplos de bloques de primer nivel:
 
 ```hcl
-resource "aws_s3_bucket" "principal" {
-  bucket = "curso-hcl-dev-demo01"
-}
+terraform { ... }
+provider "aws" { ... }
+resource "aws_s3_bucket" "ejemplo" { ... }
+variable "nombre" { ... }
+output "resultado" { ... }
+locals { ... }
+data "aws_s3_bucket" "existente" { ... }
+module "hijo" { ... }
 ```
 
-Sus partes son:
+### 5.2. Argumentos
 
-- `resource`: tipo de bloque.
-- `aws_s3_bucket`: tipo de recurso.
-- `principal`: nombre local.
-- `bucket`: argumento del recurso.
-
-### 4.4. Nombre local y nombre remoto
-
-`principal` identifica el recurso dentro de Terraform.
-
-`curso-hcl-dev-demo01` es el nombre del bucket.
-
-No tienen por qué coincidir.
-
-La referencia al recurso utiliza el nombre local:
+Un argumento asigna un valor a un nombre dentro de un bloque.
 
 ```hcl
-aws_s3_bucket.principal.id
+argumento = expresion
 ```
+
+La expresión puede ser un literal, una referencia, una llamada a función, etc.
+
+### 5.3. Identificadores
+
+Nombres de bloques, argumentos, variables, locales, outputs, módulos:
+- Empiezan por letra o `_`.
+- Continúan con letras, dígitos, `_`, `-`.
+- Sensibles a mayúsculas/minúsculas.
+- Convención: `snake_case` para todo.
 
 ---
 
-## 5. Identificadores, comentarios y estilo
+## 6. Tipos de datos literales
 
-Un estilo consistente facilita revisar configuraciones.
-
-### 5.1. Identificadores
-
-Utiliza nombres descriptivos:
+### 6.1. Cadenas (string)
 
 ```hcl
-variable "project" {
-  type = string
-}
+# Comillas dobles (interpolación permitida)
+"hola mundo"
+"bucket-${var.nombre}"
+
+# Heredoc (multilínea, sin interpolación automática)
+<<-EOF
+  línea 1
+  línea 2
+EOF
 ```
 
-Evita nombres ambiguos:
+### 6.2. Números (number)
 
 ```hcl
-variable "x" {
-  type = string
-}
+42
+3.14
+-10
 ```
 
-Terraform permite guiones en muchos identificadores.
-
-Como convención, utilizaremos `snake_case` para nombres locales compuestos.
-
-### 5.2. Comentarios
-
-HCL admite:
-
-```hcl
-# Comentario de una línea.
-
-// Otro comentario de una línea.
-
-/*
-Comentario
-de varias líneas.
-*/
-```
-
-En el curso utilizaremos principalmente `#`.
-
-### 5.3. Comentarios útiles
-
-Explica el motivo:
-
-```hcl
-# Permite limpiar objetos ficticios al destruir el laboratorio.
-force_destroy = true
-```
-
-Evita repetir lo evidente:
-
-```hcl
-# Asigna true a force_destroy.
-force_destroy = true
-```
-
-### 5.4. Formato
-
-Terraform proporciona:
-
-```bash
-terraform fmt
-```
-
-No necesitas alinear manualmente los signos `=`.
-
-El formato mejora la lectura, pero no demuestra que el despliegue sea correcto.
-
----
-
-## 6. Tipos de valores
-
-Terraform utiliza valores primitivos y estructuras de colección.
-
-### 6.1. Tipos principales
-
-| **Tipo** | **Ejemplo** | **Uso** |
-|----------|-------------|---------|
-| `string` | `"dev"` | Texto |
-| `number` | `3` | Cantidades |
-| `bool` | `true` | Condiciones |
-| `list(string)` | `["a", "b"]` | Secuencia de textos |
-| `set(string)` | `toset(["a", "b"])` | Elementos únicos |
-| `map(string)` | `{ owner = "formacion" }` | Pares clave-valor |
-
-También existen tipos estructurales como `object` y `tuple`.
-
-### 6.2. Cadenas
-
-```hcl
-project = "curso-hcl"
-```
-
-Las cadenas usan comillas dobles.
-
-No utilices comillas tipográficas.
-
-### 6.3. Números
-
-```hcl
-cantidad = 3
-ratio    = 0.5
-```
-
-Si un argumento espera un número, evita escribirlo como texto.
-
-### 6.4. Booleanos
-
-```hcl
-enabled = true
-```
-
-Los valores booleanos son:
+### 6.3. Booleanos (bool)
 
 ```hcl
 true
 false
 ```
 
-Se escriben sin comillas.
-
-### 6.5. Valor nulo
+### 6.4. Valores nulos
 
 ```hcl
-descripcion = null
+null
 ```
-
-`null` representa ausencia de valor.
-
-Su comportamiento depende del contexto, del esquema y de las reglas de nulabilidad.
 
 ---
 
-## 7. Colecciones y estructuras
+## 7. Tipos de datos complejos
 
-Las colecciones permiten agrupar y transformar información.
-
-### 7.1. Listas
+### 7.1. Listas (list) - ordenadas, permiten duplicados
 
 ```hcl
-environments = ["dev", "test", "prod"]
+["a", "b", "c"]
+[1, 2, 3]
+[true, false]
 ```
 
-El primer índice es cero:
+Acceso por índice (base 0): `lista[0]`
+
+### 7.2. Conjuntos (set) - sin orden, sin duplicados
 
 ```hcl
-local.environments[0]
+toset(["a", "b", "a"])  # resultado: ["a", "b"] (orden no garantizado)
 ```
 
-El orden importa.
-
-### 7.2. Conjuntos
+### 7.3. Mapas (map) / Objetos (object) - clave-valor
 
 ```hcl
-environments = toset(["dev", "test", "dev"])
+# Mapa: valores del mismo tipo
+{ "clave1" = "valor1", "clave2" = "valor2" }
+
+# Objeto: valores de tipos distintos
+{ nombre = "bucket", versionado = true, replicas = 3 }
 ```
 
-El conjunto elimina duplicados.
+Acceso: `mapa["clave"]` o `objeto.atributo`
 
-No ofrece el mismo acceso por índice que una lista.
-
-### 7.3. Mapas
+### 7.4. Tuplas (tuple) - secuencia de tipos fijos
 
 ```hcl
-tags = {
-  Project = "curso-hcl"
-  Owner   = "formacion"
+["texto", 42, true]  # tuple(string, number, bool)
+```
+
+---
+
+## 8. Expresiones y operadores
+
+### 8.1. Aritméticos
+
+```hcl
+1 + 2    # 3
+10 - 3   # 7
+4 * 5    # 20
+20 / 3   # 6 (división entera)
+20 % 3   # 2 (módulo)
+```
+
+### 8.2. Comparación
+
+```hcl
+1 == 1   # true
+1 \!= 2   # true
+1 < 2    # true
+1 <= 1   # true
+```
+
+### 8.3. Lógicos
+
+```hcl
+true && false  # false
+true || false  # true
+\!true          # false
+```
+
+### 8.4. Condicional (ternario)
+
+```hcl
+condicion ? valor_si_verdadero : valor_si_falso
+
+# Ejemplo
+var.entorno == "prod" ? "alta" : "baja"
+```
+
+---
+
+## 9. Referencias e interpolación
+
+### 9.1. Referencias a atributos
+
+```hcl
+resource "aws_s3_bucket" "ejemplo" {
+  bucket = "mi-bucket"
+}
+
+# En otro recurso o output:
+output "arn" {
+  value = aws_s3_bucket.ejemplo.arn
 }
 ```
 
-Puedes acceder mediante:
+### 9.2. Interpolación en cadenas
 
 ```hcl
-local.tags["Owner"]
+"El bucket es ${aws_s3_bucket.ejemplo.bucket}"
+"La región es ${var.region}"
 ```
 
-### 7.4. Objetos
-
-Un objeto puede combinar atributos de tipos distintos:
+### 9.3. Directivas en heredoc
 
 ```hcl
-laboratorio = {
-  name    = "hcl"
-  enabled = true
-  minutes = 60
-}
+<<-EOF
+  Bucket: ${aws_s3_bucket.ejemplo.bucket}
+  ARN: ${aws_s3_bucket.ejemplo.arn}
+EOF
 ```
-
-Un tipo explícito podría ser:
-
-```hcl
-object({
-  name    = string
-  enabled = bool
-  minutes = number
-})
-```
-
-### 7.5. Tuplas y listas
-
-La expresión `["dev", "test"]` produce inicialmente un valor estructural de tupla.
-
-Terraform puede convertirlo a una lista cuando el contexto lo requiere.
-
-Para comenzar, céntrate en el tipo esperado por cada variable o argumento.
 
 ---
 
-## 8. Referencias y dependencias
+## 10. Variables de entrada
 
-Las referencias conectan unas partes de la configuración con otras.
-
-### 8.1. Variables
+### 10.1. Declaración básica
 
 ```hcl
-var.project
-```
-
-Accede al valor de una variable de entrada.
-
-### 8.2. Valores locales
-
-```hcl
-local.bucket_name
-```
-
-Accede a un valor definido en `locals`.
-
-### 8.3. Recursos
-
-```hcl
-aws_s3_bucket.principal.id
-```
-
-Accede a un atributo del recurso.
-
-### 8.4. Dependencia implícita
-
-Ejemplo:
-
-```hcl
-resource "aws_s3_object" "readme" {
-  bucket  = aws_s3_bucket.principal.id
-  key     = "README.txt"
-  content = "Laboratorio HCL."
-}
-```
-
-La referencia permite a Terraform reconocer la dependencia.
-
-El objeto necesita el bucket.
-
-No añadimos `depends_on` porque esa relación ya está expresada.
-
-### 8.5. Valores desconocidos
-
-Algunos atributos solo se conocen después de aplicar.
-
-Durante el plan puedes ver:
-
-```text
-(known after apply)
-```
-
-No es necesariamente un error.
-
-Es una indicación de que el valor todavía no está disponible.
-
----
-
-## 9. Cadenas, interpolación y heredoc
-
-Terraform permite construir texto a partir de expresiones.
-
-### 9.1. Interpolación
-
-```hcl
-bucket = "${var.project}-${var.environment}"
-```
-
-La expresión entre `${` y `}` se incorpora al texto.
-
-### 9.2. Referencia directa
-
-Si necesitas únicamente el valor:
-
-```hcl
-bucket = local.bucket_name
-```
-
-Evita:
-
-```hcl
-bucket = "${local.bucket_name}"
-```
-
-La interpolación no aporta nada en ese caso.
-
-### 9.3. Caracteres especiales
-
-```hcl
-mensaje = "Primera línea\nSegunda línea"
-ruta    = "C:\\laboratorio"
-```
-
-`\n` representa un salto de línea.
-
-`\\` representa una barra invertida.
-
-### 9.4. Texto multilínea
-
-```hcl
-content = <<-EOT
-  Curso de Terraform.
-  Entorno: LocalStack.
-  Proyecto: ${var.project}.
-EOT
-```
-
-`<<-` permite retirar una indentación común.
-
-El marcador final debe coincidir con el inicial.
-
-### 9.5. Interpolación literal
-
-Para escribir `${...}` sin evaluarlo:
-
-```hcl
-ejemplo = "Utiliza $${var.project} como referencia."
-```
-
-Terraform producirá el texto literal `${var.project}`.
-
----
-
-## 10. Operadores y expresiones
-
-Las expresiones permiten calcular valores.
-
-### 10.1. Aritmética
-
-```hcl
-total = 2 + 3
-doble = 4 * 2
-mitad = 10 / 2
-```
-
-No utilizaremos cálculos complejos en el despliegue.
-
-### 10.2. Comparación
-
-```hcl
-var.environment == "dev"
-var.environment != "prod"
-```
-
-La comparación produce un booleano.
-
-### 10.3. Lógica
-
-```hcl
-var.enabled && var.environment == "dev"
-```
-
-Operadores habituales:
-
-- `&&`: y.
-- `||`: o.
-- `!`: negación.
-
-No confíes en una evaluación de cortocircuito como mecanismo para proteger accesos inválidos.
-
-### 10.4. Condicional
-
-```hcl
-var.environment == "prod" ? "alta" : "normal"
-```
-
-La estructura es:
-
-```hcl
-condicion ? resultado_si_true : resultado_si_false
-```
-
-Las ramas deben ser compatibles con las reglas de tipos.
-
-### 10.5. Legibilidad
-
-Evita encadenar muchos condicionales.
-
-Cuando una expresión crezca, considera separarla en valores locales.
-
----
-
-## 11. Preparación del laboratorio
-
-Crearemos un proyecto independiente.
-
-### 11.1. Directorio
-
-```bash
-mkdir -p terraform-hcl-localstack
-cd terraform-hcl-localstack
-```
-
-Todos los comandos siguientes se ejecutan aquí.
-
-### 11.2. Estructura
-
-El laboratorio tendrá:
-
-```text
-terraform-hcl-localstack/
-├── compose.yaml
-├── .env
-├── .gitignore
-├── versions.tf
-├── providers.tf
-├── variables.tf
-├── locals.tf
-├── main.tf
-├── outputs.tf
-└── terraform.tfvars
-```
-
-Los nombres son convenciones organizativas.
-
-Terraform carga conjuntamente los archivos `.tf` del directorio.
-
-### 11.3. Imagen de LocalStack
-
-El docente debe proporcionar una etiqueta o digest validado.
-
-Créalo así:
-
-```bash
-printf 'LOCALSTACK_IMAGE=%s\n' \
-  'localstack/localstack:4.0' > .env
-```
-
-La etiqueta es una referencia de laboratorio, no una recomendación de usar la versión más reciente.
-
-Para reproducibilidad estricta, utiliza un digest validado.
-
-### 11.4. Archivo `.gitignore`
-
-```gitignore
-.terraform/
-*.tfstate
-*.tfstate.*
-*.tfplan
-crash.log
-.env
-```
-
-En un proyecto raíz ejecutable, versiona `.terraform.lock.hcl`.
-
----
-
-## 12. Arranque de LocalStack
-
-Utilizaremos únicamente S3.
-
-### 12.1. Archivo `compose.yaml`
-
-```yaml
-services:
-  localstack:
-    image: ${LOCALSTACK_IMAGE:?Define LOCALSTACK_IMAGE en .env}
-    ports:
-      - "127.0.0.1:4566:4566"
-    environment:
-      SERVICES: s3
-      AWS_DEFAULT_REGION: us-east-1
-```
-
-El puerto se publica en la interfaz local.
-
-No montamos el socket de Docker.
-
-Las operaciones S3 de esta práctica no lo necesitan.
-
-### 12.2. Arranque
-
-```bash
-docker compose up -d
-docker compose ps
-```
-
-Consulta los mensajes:
-
-```bash
-docker compose logs --tail=100 localstack
-```
-
-### 12.3. Credenciales ficticias
-
-En la terminal actual:
-
-```bash
-export AWS_ACCESS_KEY_ID=test
-export AWS_SECRET_ACCESS_KEY=test
-export AWS_DEFAULT_REGION=us-east-1
-unset AWS_SESSION_TOKEN AWS_PROFILE AWS_DEFAULT_PROFILE
-```
-
-Estas variables sirven para AWS CLI.
-
-El proveedor también tendrá credenciales ficticias explícitas.
-
-### 12.4. Comprobación S3
-
-```bash
-aws \
-  --endpoint-url=http://localhost:4566 \
-  --region us-east-1 \
-  s3api list-buckets
-```
-
-Si LocalStack todavía está arrancando, espera y repite.
-
-No continúes hasta que la consulta responda correctamente.
-
----
-
-## 13. Versiones y proveedor
-
-Esta configuración conecta Terraform con el S3 local.
-
-### 13.1. Archivo `versions.tf`
-
-```hcl
-terraform {
-  required_version = ">= 1.6.0, < 2.0.0"
-
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
-}
-```
-
-`required_providers` declara origen y restricciones.
-
-No configura el endpoint.
-
-### 13.2. Archivo `providers.tf`
-
-```hcl
-provider "aws" {
-  region     = "us-east-1"
-  access_key = "test"
-  secret_key = "test"
-
-  skip_credentials_validation = true
-  skip_metadata_api_check     = true
-  skip_requesting_account_id  = true
-
-  s3_use_path_style = true
-
-  endpoints {
-    s3 = "http://localhost:4566"
-  }
-}
-```
-
-La configuración está limitada a esta práctica S3.
-
-### 13.3. Alcance de los endpoints
-
-Añadir recursos de otros servicios requiere revisar sus endpoints.
-
-No presupongas que configurar S3 redirige todo el proveedor.
-
-Esta configuración tampoco configura un backend S3.
-
-El backend tiene opciones independientes.
-
-### 13.4. Inicialización
-
-```bash
-terraform init
-```
-
-Comprueba que se instala `hashicorp/aws`.
-
-Conserva el archivo de bloqueo para repetir la selección del proveedor.
-
----
-
-## 14. Variables de entrada
-
-Las variables parametrizan la configuración.
-
-### 14.1. Archivo `variables.tf`
-
-```hcl
-variable "project" {
-  description = "Prefijo del laboratorio."
+variable "region" {
   type        = string
-  default     = "curso-hcl"
-
-  validation {
-    condition = can(regex(
-      "^[a-z][a-z0-9-]{2,29}$",
-      var.project
-    ))
-    error_message = "Usa entre 3 y 30 caracteres en minúsculas."
-  }
+  default     = "us-east-1"
+  description = "Región AWS para los recursos"
 }
+```
 
-variable "environment" {
-  description = "Entorno lógico del ejercicio."
+### 10.2. Tipos y validaciones
+
+```hcl
+variable "bucket_name" {
   type        = string
-  default     = "dev"
-
+  description = "Nombre del bucket (3-63 chars, minúsculas, números, guiones)"
   validation {
-    condition = contains(
-      ["dev", "test", "prod"],
-      var.environment
-    )
-    error_message = "El entorno debe ser dev, test o prod."
+    condition     = can(regex("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$", var.bucket_name))
+    error_message = "Formato inválido para nombre de bucket S3."
   }
 }
 
-variable "suffix" {
-  description = "Identificador ficticio del alumno."
-  type        = string
-  default     = "demo01"
-
-  validation {
-    condition     = can(regex("^[a-z0-9]{4,8}$", var.suffix))
-    error_message = "Usa entre 4 y 8 letras minúsculas o números."
-  }
-}
-
-variable "extra_tags" {
-  description = "Etiquetas adicionales."
+variable "tags" {
   type        = map(string)
-
-  default = {
-    Owner = "formacion"
-  }
+  default     = {}
+  description = "Etiquetas adicionales"
 }
 ```
 
-### 14.2. Archivo `terraform.tfvars`
+### 10.3. Sensibles
 
 ```hcl
-project     = "curso-hcl"
-environment = "dev"
-suffix      = "alumno01"
-
-extra_tags = {
-  Owner = "equipo-docente"
-  Group = "grupo-a"
+variable "secret_key" {
+  type      = string
+  sensitive = true
 }
 ```
 
-### 14.3. Lectura automática
-
-Terraform carga automáticamente `terraform.tfvars`.
-
-También reconoce archivos terminados en `.auto.tfvars`.
-
-Si varias fuentes definen una variable, existen reglas de precedencia.
-
-No confundas valores predeterminados con valores finales.
+> **Nota**: `sensitive = true` oculta el valor en la salida de `plan` y `apply`, **pero se guarda en el estado**.
 
 ---
 
-## 15. Valores locales
+## 11. Valores locales (locals)
 
-Los valores locales dan nombre a expresiones reutilizables.
-
-### 15.1. Archivo `locals.tf`
+### 11.1. Declaración
 
 ```hcl
 locals {
-  bucket_name = "${var.project}-${var.environment}-${var.suffix}"
-
-  base_tags = {
-    Project     = var.project
-    Environment = var.environment
+  project_name = "mi-proyecto"
+  environment  = var.environment
+  common_tags = {
+    Project     = local.project_name
+    Environment = local.environment
     ManagedBy   = "Terraform"
-    Laboratory  = "LocalStack"
   }
-
-  tags = merge(
-    var.extra_tags,
-    local.base_tags
-  )
-
-  priority = var.environment == "prod" ? "alta" : "normal"
+  bucket_name = "${local.project_name}-${local.environment}-data"
 }
 ```
 
-### 15.2. Qué calcula
-
-`bucket_name` combina tres variables.
-
-`base_tags` construye un mapa.
-
-`tags` combina mapas.
-
-`priority` utiliza un condicional.
-
-### 15.3. Orden de `merge`
-
-Cuando una clave se repite, prevalece el valor del mapa posterior.
-
-En este ejemplo, las etiquetas base prevalecen sobre las adicionales.
-
-Así `Laboratory` conserva el valor `LocalStack`.
-
-### 15.4. Variables y locales
-
-Las variables reciben valores desde fuera.
-
-Los locales se calculan dentro de la configuración.
-
-No puedes asignar un local mediante `-var`.
-
-### 15.5. Sin reasignación imperativa
-
-Un local no se modifica paso a paso.
-
-Terraform evalúa las expresiones según sus dependencias.
-
-El orden visual no equivale a orden de ejecución.
-
----
-
-## 16. Recursos del laboratorio
-
-Crearemos un bucket y un objeto de texto.
-
-### 16.1. Archivo `main.tf`
+### 11.2. Uso
 
 ```hcl
-resource "aws_s3_bucket" "principal" {
+resource "aws_s3_bucket" "main" {
   bucket = local.bucket_name
-
-  # Solo para facilitar la limpieza de datos ficticios.
-  force_destroy = true
-
-  tags = local.tags
-}
-
-resource "aws_s3_object" "readme" {
-  bucket = aws_s3_bucket.principal.id
-  key    = "README.txt"
-
-  content = <<-EOT
-    Laboratorio de sintaxis HCL.
-    Proyecto: ${var.project}
-    Entorno: ${var.environment}
-    Prioridad: ${local.priority}
-    Plataforma de referencia: AWS.
-    Entorno de ejecución: LocalStack.
-  EOT
-
-  content_type = "text/plain"
+  tags   = local.common_tags
 }
 ```
 
-### 16.2. Dependencia
-
-El objeto referencia el identificador del bucket.
-
-Terraform utiliza esa referencia para construir el grafo.
-
-No importa que `outputs.tf` se lea antes o después visualmente.
-
-### 16.3. Advertencia sobre limpieza
-
-`force_destroy = true` permite eliminar un bucket no vacío.
-
-Es cómodo para este laboratorio.
-
-No lo copies automáticamente a producción.
-
-### 16.4. Contenido del objeto
-
-El texto demuestra:
-
-- Heredoc.
-- Interpolación.
-- Variables.
-- Locales.
-- Referencias entre recursos.
-
-No incluye secretos.
-
 ---
 
-## 17. Salidas y primera sesión de despliegue
+## 12. Funciones integradas
 
-Las salidas presentan información útil.
+Terraform incluye muchas funciones. Algunas útiles:
 
-### 17.1. Archivo `outputs.tf`
+### 12.1. Cadenas
 
 ```hcl
-output "bucket_name" {
-  description = "Nombre del bucket principal."
-  value       = aws_s3_bucket.principal.bucket
-}
-
-output "object_key" {
-  description = "Clave del objeto de práctica."
-  value       = aws_s3_object.readme.key
-}
-
-output "effective_tags" {
-  description = "Etiquetas calculadas."
-  value       = local.tags
-}
-
-output "local_s3_uri" {
-  description = "URI lógica; usar con endpoint local."
-  value       = "s3://${aws_s3_bucket.principal.bucket}"
-}
+lower("HOLA")        # "hola"
+upper("hola")        # "HOLA"
+trim("  hola  ")     # "hola"
+replace("a-b-c", "-", "_")  # "a_b_c"
+split(",", "a,b,c")  # ["a", "b", "c"]
+join("-", ["a","b"]) # "a-b"
+substr("hola", 1, 3) # "ola"
+strlen("hola")       # 4
 ```
 
-Una URI `s3://` no codifica el endpoint.
+### 12.2. Colecciones
 
-AWS CLI sigue necesitando `--endpoint-url`.
-
-### 17.2. Sesión guiada
-
-Ejecuta:
-
-```bash
-terraform fmt -recursive
-terraform validate
-terraform plan -out=lab.tfplan
+```hcl
+length([1,2,3])           # 3
+contains(["a","b"], "a")  # true
+reverse([1,2,3])          # [3,2,1]
+sort(["c","a","b"])       # ["a","b","c"]
+distinct([1,2,2,3])       # [1,2,3]
 ```
 
-Comprueba que el plan muestra dos recursos nuevos.
+### 12.3. Mapas/Objetos
 
-No aceptes un número distinto sin investigar.
-
-### 17.3. Aplicación
-
-```bash
-terraform apply lab.tfplan
-terraform output
+```hcl
+keys({a=1,b=2})           # ["a","b"]
+values({a=1,b=2})         # [1,2]
+lookup({a=1}, "a", 0)     # 1
+merge({a=1}, {b=2})       # {a=1,b=2}
 ```
 
-Aplicar un plan guardado no vuelve a solicitar aprobación interactiva.
+### 12.4. Sistema de archivos
 
-La revisión debe ocurrir antes.
-
-### 17.4. Entregable
-
-Registra:
-
-- Resultado de validación.
-- Recursos previstos.
-- Recursos creados.
-- Nombre del bucket.
-- Una explicación de la dependencia.
-
----
-
-## 18. Verificación en LocalStack
-
-Comprueba el resultado con una herramienta distinta de Terraform.
-
-### 18.1. Obtener el nombre
-
-```bash
-BUCKET="$(terraform output -raw bucket_name)"
-printf '%s\n' "$BUCKET"
+```hcl
+file("archivo.txt")           # contenido como string
+fileexists("archivo.txt")     # true/false
+templatefile("plantilla.tftpl", {var = "valor"})
 ```
 
-### 18.2. Consultar objetos
+### 12.5. Codificación
 
-```bash
-aws \
-  --endpoint-url=http://localhost:4566 \
-  --region us-east-1 \
-  s3api list-objects-v2 \
-  --bucket "$BUCKET"
+```hcl
+base64encode("hola")          # "aG9sYQ=="
+base64decode("aG9sYQ==")      # "hola"
+jsonencode({a=1})             # "{\"a\":1}"
+jsondecode("{\"a\":1}")       # {a=1}
 ```
 
-Deberías encontrar `README.txt`.
-
-### 18.3. Descargar el objeto
-
-```bash
-aws \
-  --endpoint-url=http://localhost:4566 \
-  --region us-east-1 \
-  s3 cp \
-  "s3://${BUCKET}/README.txt" \
-  ./README-descargado.txt
-```
-
-Consulta el contenido:
-
-```bash
-cat README-descargado.txt
-```
-
-### 18.4. Consultar etiquetas
-
-```bash
-aws \
-  --endpoint-url=http://localhost:4566 \
-  --region us-east-1 \
-  s3api get-bucket-tagging \
-  --bucket "$BUCKET"
-```
-
-### 18.5. Plan sin cambios
-
-```bash
-terraform plan
-```
-
-Sin modificaciones externas o de configuración, debería indicar que no hay cambios.
-
-Si no ocurre, revisa el detalle.
-
----
-
-## 19. Consola de Terraform
-
-La consola permite practicar expresiones sin desplegar recursos nuevos.
-
-### 19.1. Abrir la consola
+### 12.6. Consola interactiva
 
 ```bash
 terraform console
+# Permite evaluar expresiones interactivamente
+> lower("HOLA")
+"hola"
+> local.common_tags
+{...}
 ```
-
-Escribe una expresión por entrada.
-
-No escribas el indicador `>` si aparece en la terminal.
-
-### 19.2. Cadenas y funciones
-
-Prueba:
-
-```hcl
-upper("terraform")
-lower("LOCALSTACK")
-length("hcl")
-join("-", ["curso", "hcl", "dev"])
-split("-", "curso-hcl-dev")
-```
-
-Observa los tipos de resultado.
-
-### 19.3. Variables y locales
-
-Prueba:
-
-```hcl
-var.project
-var.environment
-local.bucket_name
-local.priority
-local.tags
-```
-
-Los valores proceden de la configuración actual.
-
-### 19.4. Colecciones
-
-Prueba:
-
-```hcl
-length(["dev", "test", "prod"])
-contains(["dev", "test"], "prod")
-toset(["dev", "dev", "test"])
-lookup({ Owner = "formacion" }, "Owner", "sin-owner")
-lookup({ Owner = "formacion" }, "Group", "sin-grupo")
-```
-
-### 19.5. Salida
-
-Escribe:
-
-```text
-exit
-```
-
-Registra tres expresiones y sus resultados.
-
-Explica qué tipo devuelve cada una.
 
 ---
 
-## 20. Expresiones `for`
+## 13. Expresiones `for` (transformación de colecciones)
 
-Una expresión `for` transforma una colección en otro valor.
-
-### 20.1. Transformar textos
-
-En la consola:
+### 13.1. Sintaxis básica
 
 ```hcl
-[for env in ["dev", "test"] : upper(env)]
+# Para lista -> lista
+[for item in lista : item * 2]
+
+# Para lista -> mapa
+{for item in lista : item => item * 2}
+
+# Con filtrado
+[for item in lista : item * 2 if item > 2]
 ```
 
-Resultado esperado:
+### 13.2. Ejemplos prácticos
 
 ```hcl
-[
-  "DEV",
-  "TEST",
-]
-```
+variable "numeros" { default = [1,2,3,4,5] }
 
-### 20.2. Construir un objeto
-
-```hcl
-{ for env in ["dev", "test"] : env => upper(env) }
-```
-
-Resultado conceptual:
-
-```hcl
-{
-  dev  = "DEV"
-  test = "TEST"
+locals {
+  duplicados = [for n in var.numeros : n * 2]
+  pares      = [for n in var.numeros : n if n % 2 == 0]
+  mapa_cuadrados = {for n in var.numeros : n => n * n}
 }
 ```
-
-### 20.3. Filtrar
-
-```hcl
-[for env in ["dev", "test", "prod"] : env if env != "prod"]
-```
-
-La condición conserva los elementos que la cumplen.
-
-### 20.4. Clave y valor
-
-```hcl
-{
-  for key, value in {
-    project = "hcl"
-    owner   = "docente"
-  } : upper(key) => value
-}
-```
-
-### 20.5. Distinción importante
-
-Una expresión `for` crea un valor.
-
-`for_each` crea instancias de un recurso o módulo.
-
-No son equivalentes.
-
-### 20.6. Ejercicio
-
-Construye una lista con:
-
-```text
-curso-dev
-curso-test
-```
-
-Utiliza una expresión `for` y una interpolación.
-
-Comprueba el resultado en la consola.
 
 ---
 
-## 21. Sesión de ampliación con `for_each`
+## 14. Expresiones condicionales avanzadas
 
-Añadiremos buckets auxiliares al mismo proyecto.
-
-### 21.1. Nueva variable
-
-Añade a `variables.tf`:
+### 14.1. Condicional en atributos
 
 ```hcl
-variable "auxiliary_buckets" {
-  description = "Nombres lógicos de buckets auxiliares."
-  type        = set(string)
-  default     = ["datos", "informes"]
-
-  validation {
-    condition = alltrue([
-      for name in var.auxiliary_buckets :
-      can(regex("^[a-z0-9]{3,10}$", name))
-    ])
-    error_message = "Usa nombres de 3 a 10 caracteres alfanuméricos."
+resource "aws_s3_bucket" "ejemplo" {
+  bucket = var.bucket_name
+  versioning {
+    enabled = var.enable_versioning  # bool
   }
 }
 ```
 
-### 21.2. Nuevo recurso
-
-Añade a `main.tf`:
+### 14.2. Recursos condicionales con `count`
 
 ```hcl
-resource "aws_s3_bucket" "auxiliary" {
-  for_each = var.auxiliary_buckets
-
-  bucket = "${local.bucket_name}-${each.key}"
-
-  force_destroy = true
-
-  tags = merge(local.tags, {
-    Purpose = each.key
-  })
+resource "aws_s3_bucket" "opcional" {
+  count  = var.crear_bucket_adicional ? 1 : 0
+  bucket = "${var.bucket_name}-extra"
 }
 ```
 
-### 21.3. Nueva salida
-
-Añade a `outputs.tf`:
+### 14.3. `for_each` con condicional
 
 ```hcl
-output "auxiliary_bucket_names" {
-  value = {
-    for key, bucket in aws_s3_bucket.auxiliary :
-    key => bucket.bucket
+variable "buckets" {
+  type = map(object({ versionado = bool }))
+  default = {}
+}
+
+resource "aws_s3_bucket" "multiples" {
+  for_each = var.buckets
+  bucket   = each.key
+  versioning {
+    enabled = each.value.versionado
   }
 }
 ```
 
-### 21.4. Claves estables
+---
 
-Las direcciones incluyen:
+## 15. Práctica guiada: Experimentando con HCL
 
-```text
-aws_s3_bucket.auxiliary["datos"]
-aws_s3_bucket.auxiliary["informes"]
+### Paso 1: Preparar entorno
+
+```bash
+mkdir -p hcl-practice/evidencias
+cd hcl-practice
+docker compose up -d
+source .env.localstack
 ```
 
-Para este conjunto, `each.key` y `each.value` tienen el mismo valor.
+### Paso 2: Crear configuración base
 
-### 21.5. Aplicación
+```hcl
+# versions.tf, providers.tf (sección 3.3)
+
+# variables.tf
+variable "project" { type = string, default = "hcl-demo" }
+variable "env"     { type = string, default = "dev" }
+variable "buckets" {
+  type = map(object({ versionado = bool }))
+  default = {
+    "datos"     = { versionado = true }
+    "logs"      = { versionado = false }
+    "temporal"  = { versionado = false }
+  }
+}
+
+# locals.tf
+locals {
+  prefix = "${var.project}-${var.env}"
+  tags = { Project = var.project, Env = var.env }
+}
+
+# main.tf
+resource "aws_s3_bucket" "buckets" {
+  for_each = var.buckets
+  bucket   = "${local.prefix}-${each.key}"
+  versioning {
+    enabled = each.value.versionado
+  }
+  tags = local.tags
+}
+
+# outputs.tf
+output "bucket_names" {
+  value = { for k, v in aws_s3_bucket.buckets : k => v.bucket }
+}
+```
+
+### Paso 3: Experimentar en consola
+
+```bash
+terraform init
+terraform console
+
+# En consola:
+> var.buckets
+> local.prefix
+> [for k, v in var.buckets : "${local.prefix}-${k}"]
+> {for k, v in var.buckets : k => v.versionado}
+```
+
+### Paso 4: Desplegar y verificar
 
 ```bash
 terraform fmt
 terraform validate
-terraform plan
-terraform apply
+terraform plan -out=hcl.tfplan
+terraform apply hcl.tfplan
+
+# Verificar con aws_local
+aws_local s3api list-buckets | jq -r '.Buckets[].Name'
+aws_local s3api get-bucket-versioning --bucket hcl-demo-dev-datos
 ```
 
-Revisa antes de confirmar.
-
-Deberían añadirse dos buckets sin reemplazar el principal.
-
----
-
-## 22. Sesión de cambios y observación
-
-Ahora observarás cómo las expresiones afectan al plan.
-
-### 22.1. Cambio de etiqueta
-
-En `terraform.tfvars`, cambia:
+### Paso 5: Modificar y volver a aplicar
 
 ```hcl
-extra_tags = {
-  Owner = "nuevo-equipo"
-  Group = "grupo-a"
-}
+# En variables.tf, cambiar:
+"temporal" = { versionado = true }  # era false
 ```
-
-Ejecuta:
 
 ```bash
-terraform plan
+terraform plan -out=update.tfplan
+terraform apply update.tfplan
+
+# Verificar cambio
+aws_local s3api get-bucket-versioning --bucket hcl-demo-dev-temporal
 ```
 
-El cambio debería afectar a las etiquetas.
-
-No debería requerir cambiar los nombres de bucket.
-
-### 22.2. Cambio de entorno
-
-Cambia temporalmente:
-
-```hcl
-environment = "test"
-```
-
-Ejecuta otro plan.
-
-Los nombres calculados cambian.
-
-El proveedor puede necesitar reemplazar los buckets porque sus nombres no se modifican en el mismo recurso remoto.
-
-### 22.3. No aplicar todavía
-
-En esta sesión, observa el plan sin aplicarlo.
-
-Después restaura:
-
-```hcl
-environment = "dev"
-```
-
-### 22.4. Cambio inválido
-
-Prueba:
-
-```hcl
-environment = "desarrollo"
-```
-
-Ejecuta:
+### Paso 6: Limpiar
 
 ```bash
-terraform plan
-```
-
-La validación de la variable debería rechazar el valor.
-
-### 22.5. Restauración
-
-Devuelve `environment` a `dev`.
-
-Comprueba:
-
-```bash
-terraform validate
-terraform plan
-```
-
-### 22.6. Entregable
-
-Explica la diferencia entre:
-
-- Modificar una etiqueta.
-- Modificar un nombre calculado.
-- Introducir un valor inválido.
-
----
-
-## 23. Errores frecuentes y diagnóstico
-
-Aprender a leer errores forma parte del trabajo con HCL.
-
-### 23.1. Comillas ausentes
-
-Incorrecto:
-
-```hcl
-bucket = curso-hcl
-```
-
-Terraform interpreta una expresión, no una cadena literal.
-
-Correcto:
-
-```hcl
-bucket = "curso-hcl"
-```
-
-### 23.2. Referencia inexistente
-
-Incorrecto:
-
-```hcl
-bucket = local.bucket_names
-```
-
-Si solo has definido `bucket_name`, la referencia es incorrecta.
-
-Comprueba el identificador exacto.
-
-### 23.3. Argumento no admitido
-
-Incorrecto:
-
-```hcl
-resource "aws_s3_bucket" "ejemplo" {
-  nombre = "curso-hcl-demo01"
-}
-```
-
-El proveedor espera `bucket`, no `nombre`.
-
-La sintaxis puede ser legible y el esquema inválido.
-
-### 23.4. Llave sin cerrar
-
-Incorrecto:
-
-```hcl
-locals {
-  project = "curso-hcl"
-```
-
-Busca delimitadores abiertos.
-
-El error puede señalar una línea posterior al origen real.
-
-### 23.5. Credenciales o conexión
-
-Un fallo de conexión no es un fallo de HCL.
-
-Revisa:
-
-```bash
-docker compose ps
-docker compose logs --tail=100 localstack
-```
-
-### 23.6. Procedimiento de diagnóstico
-
-1. Lee el primer error.
-2. Identifica archivo y línea.
-3. Clasifica el problema.
-4. Corrige una causa.
-5. Ejecuta de nuevo la comprobación.
-
----
-
-## 24. Diferencias respecto a AWS real
-
-LocalStack permite practicar, pero no reproduce todas las garantías de AWS.
-
-### 24.1. Qué permanece parecido
-
-Utilizamos:
-
-- Tipos de recursos del proveedor AWS.
-- Sintaxis de Terraform.
-- Referencias.
-- Variables.
-- Expresiones.
-- Planes.
-- Estado.
-
-Estos conceptos son transferibles.
-
-### 24.2. Qué cambia
-
-Cambian aspectos como:
-
-- Endpoints.
-- Credenciales.
-- Comportamiento de servicios.
-- Restricciones reproducidas.
-- Persistencia del entorno.
-- Rendimiento.
-- Integración con identidades.
-
-### 24.3. Nombres S3
-
-AWS aplica reglas de nombres y disponibilidad global para buckets de propósito general.
-
-LocalStack no debe utilizarse como prueba definitiva de cumplimiento de todas esas reglas.
-
-Los nombres generados aquí son didácticos.
-
-### 24.4. Seguridad
-
-Las credenciales `test` no son un patrón para producción.
-
-Los indicadores `skip_*` pertenecen a esta configuración local.
-
-No deben copiarse sin revisión a un entorno real.
-
-### 24.5. Persistencia y estado
-
-El estado de Terraform y los recursos del emulador son sistemas distintos.
-
-Si reinicias LocalStack y pierde recursos, el estado puede seguir registrándolos.
-
-No borres el estado como primera solución.
-
-Investiga y decide cómo recuperar o limpiar el laboratorio.
-
----
-
-## 25. Limpieza del laboratorio
-
-Elimina primero los recursos gestionados.
-
-### 25.1. Plan de destrucción
-
-Con LocalStack todavía funcionando:
-
-```bash
-terraform plan -destroy -out=destroy.tfplan
-```
-
-Comprueba que solo aparecen recursos del laboratorio.
-
-### 25.2. Destrucción
-
-```bash
-terraform apply destroy.tfplan
-```
-
-La aplicación de este plan no vuelve a pedir aprobación.
-
-No ejecutes el comando sin haber revisado el plan.
-
-### 25.3. Verificación
-
-```bash
-aws \
-  --endpoint-url=http://localhost:4566 \
-  --region us-east-1 \
-  s3api list-buckets
-```
-
-Los buckets del ejercicio ya no deberían aparecer.
-
-### 25.4. Apagar LocalStack
-
-```bash
+terraform destroy
+aws_local s3api list-buckets
 docker compose down
 ```
 
-No hagas esto antes de destruir si quieres que Terraform pueda eliminar los recursos.
+---
 
-### 25.5. Archivos auxiliares
+## 16. Sesiones guiadas para el alumnado
 
-Puedes eliminar:
+### 16.1. Sesión 1: Sintaxis básica y consola (30 min)
 
-```bash
-rm -f lab.tfplan destroy.tfplan README-descargado.txt
-```
+1. Crear configuración con variables, locals, outputs
+2. `terraform console` → evaluar expresiones (strings, listas, mapas, funciones)
+3. `terraform fmt` → `validate`
+3. **Entrega**: Capturas de consola + configuración formateada
 
-No elimines indiscriminadamente estados o archivos de bloqueo.
+### 16.2. Sesión 2: Expresiones `for` y condicionales (30 min)
 
-### 25.6. Terminal
+1. Añadir `for_each` para múltiples buckets
+2. Usar `for` en locals para transformar datos
+3. Añadir recurso condicional con `count`
+4. `plan` → `apply` → verificar
+5. **Entrega**: Configuración con `for_each` + evidencia de buckets creados
 
-Si ya no necesitas las credenciales ficticias:
+### 16.3. Sesión 3: Depuración y buenas prácticas (20 min)
 
-```bash
-unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_DEFAULT_REGION
-```
+1. Introducir error de sintaxis intencional → `validate` → corregir
+2. `fmt -check` en CI simulado
+3. Revisar `.terraform.lock.hcl`
+4. Limpiar
+5. **Entrega**: Error detectado + corrección + checklist de estilo
 
 ---
 
-## 26. Ejercicios de consolidación
+## 17. Ejercicios de refuerzo
 
-Completa estos ejercicios sin copiar directamente la solución.
+### 17.1. Ejercicio de identificación
 
-### 26.1. Ejercicio A: cadena calculada
+Escribe en HCL:
+- Una variable `puertos` tipo `list(number)` con validación (1-65535)
+- Un local `endpoints` que genere mapa `{"http" = "puerto80", "https" = "puerto443"}`
+- Un output que muestre solo los buckets con versionado habilitado
 
-Define un local con este resultado:
+### 17.2. Ejercicio de interpretación
 
-```text
-Laboratorio curso-hcl en dev
-```
-
-Utiliza `var.project` y `var.environment`.
-
-### 26.2. Ejercicio B: etiqueta nueva
-
-Añade:
-
-```text
-Lesson = 03-01
-```
-
-No modifiques directamente todos los recursos.
-
-Busca el lugar compartido adecuado.
-
-### 26.3. Ejercicio C: condicional
-
-Define una salida que muestre:
-
-- `requiere revision` para `prod`.
-- `laboratorio` para otros entornos.
-
-No despliegues en AWS real.
-
-### 26.4. Ejercicio D: transformación
-
-Convierte:
+Dada esta expresión:
 
 ```hcl
-["s3", "terraform", "localstack"]
+[for k, v in {a=1,b=2,c=3} : upper(k) if v > 1]
 ```
 
-En una lista de mayúsculas mediante `for`.
+¿Cuál es el resultado? Verifica en `terraform console`.
 
-### 26.5. Ejercicio E: filtrado
+### 17.3. Ejercicio con asistente de IA
 
-Conserva solo las palabras cuya longitud sea mayor que dos.
-
-Utiliza `length` y una condición.
-
-### 26.6. Ejercicio F: diagnóstico
-
-Provoca una referencia incorrecta en un output.
-
-Guarda el error.
-
-Corrige el identificador y repite la validación.
-
-### 26.7. Entrega
-
-Incluye configuración, resultados y explicación.
-
-No entregues estados ni planes binarios.
+```text
+Instrucción:
+Explica la diferencia entre list, set, map, object y tuple en HCL.
+Da un ejemplo de cuándo usar cada uno en configuración Terraform.
+Incluye: acceso a elementos, restricciones, funciones útiles.
+No inventes sintaxis. Usa la documentación oficial como referencia.
+```
 
 ---
 
-## 27. Resumen y lista de comprobación
+## 18. Limitaciones de LocalStack en HCL
 
-La sintaxis HCL permite describir configuraciones mediante bloques, argumentos y expresiones.
+| Característica HCL | LocalStack | AWS Real |
+|--------------------|------------|----------|
+| Sintaxis completa | ✅ | ✅ |
+| Funciones | ✅ | ✅ |
+| `for_each` / `count` | ✅ | ✅ |
+| `dynamic` blocks | ✅ | ✅ |
+| `terraform console` | ✅ | ✅ |
+| Validación provider | ⚠️ Parcial | ✅ Completa |
 
-### 27.1. Conceptos esenciales
+---
 
-Recuerda:
+## 19. Diagnóstico de errores frecuentes
 
-- Un argumento asigna una expresión.
-- Un bloque organiza contenido.
-- Las etiquetas identifican elementos.
-- Las referencias conectan valores.
-- Las variables reciben entradas.
-- Los locales nombran cálculos.
-- Las funciones transforman valores.
-- `for` construye colecciones.
-- `for_each` crea instancias.
-- El formato no garantiza exactitud.
-- Validar no equivale a desplegar.
-- LocalStack no equivale a AWS real.
+| Error | Causa | Solución |
+|-------|-------|----------|
+| `Invalid character` | Comilla mal cerrada, carácter especial | Revisar comillas, escapar `$` `{} ` |
+| `Unsupported argument` | Argumento no existe en ese bloque | Consultar docs del recurso/provider |
+| `Invalid template interpolation` | Sintaxis `${...}` incorrecta | Verificar llaves, referencias válidas |
+| `Variable not found` | Referencia a variable no declarada | Declarar variable o corregir nombre |
+| `Cycle detected` | Referencia circular entre recursos | Revisar dependencias, usar `depends_on` |
 
-### 27.2. Antes de aplicar
+---
 
-Comprueba:
+## 20. Evaluación y cierre
 
-- Estás en el directorio correcto.
-- LocalStack responde.
-- El proveedor usa el endpoint local.
-- Las credenciales son ficticias.
-- La configuración está formateada.
-- La validación termina correctamente.
-- Has revisado el plan.
-- Los recursos previstos son los esperados.
+### 20.1. Rúbrica (0-2 puntos)
 
-### 27.3. Después de aplicar
+| Criterio | 0 pts | 1 pt | 2 pts |
+|----------|-------|------|-------|
+| Sintaxis | Errores de sintaxis | Funciona pero sin formatear | `fmt` + `validate` limpios |
+| Variables | No usa variables | Variables básicas | Variables + validaciones + sensitive |
+| Locals | No usa locals | Locals simples | Locals + funciones + expresiones `for` |
+| Expresiones | Solo literales | Interpolación básica | `for`, condicionales, funciones |
+| Consola | No usa | Usa básico | Experimenta y depura en consola |
 
-Comprueba:
+### 20.2. Checklist final
 
-- Los outputs tienen sentido.
-- AWS CLI consulta el endpoint local.
-- El objeto contiene el texto esperado.
-- Las etiquetas coinciden.
-- Un nuevo plan no presenta cambios inesperados.
+- [ ] Configuración HCL válida (`fmt` + `validate`)
+- [ ] Variables con tipo, descripción, validación
+- [ ] Locals para valores calculados y tags comunes
+- [ ] Expresiones `for` para transformar colecciones
+- [ ] Condicionales (`count`, `for_each`, ternario)
+- [ ] `terraform console` usado para experimentar
+- [ ] Recursos creados y verificados con `aws_local`
+- [ ] Limpieza completa
 
-### 27.4. Evidencia final
+### 20.3. Idea principal
 
-Redacta una explicación breve de:
-
-1. Cómo se calcula el nombre del bucket.
-2. Cómo se conecta el objeto con el bucket.
-3. Cómo se combinan las etiquetas.
-4. Cómo se crean las instancias auxiliares.
-5. Cómo se realiza la limpieza.
-
-### 27.5. Idea final
-
-Aprender HCL no consiste en memorizar bloques aislados.
-
-Consiste en comprender cómo los valores, las expresiones y las referencias describen una infraestructura que Terraform puede analizar, comparar y gestionar.
+> **HCL es declarativo: describes QUÉ, no CÓMO.**
+> Variables, locals, funciones y expresiones `for` reducen repetición.
+> **`terraform console` es tu mejor amigo para aprender y depurar.**
+> **`fmt` y `validate` son obligatorios antes de cualquier plan.**
